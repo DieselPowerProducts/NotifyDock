@@ -1,4 +1,5 @@
 import {json} from "@remix-run/node";
+import {recordEmailHistory} from "../email-history.server";
 import {authenticate} from "../shopify.server";
 import {sendNotifyDockEvent} from "../klaviyo.server";
 
@@ -26,6 +27,7 @@ export async function action({request}) {
   }
 
   const emailType = payload?.email_type;
+  const orderId = `${payload?.order_id || ""}`.trim();
   const sku = `${payload?.sku || ""}`.trim();
   const orderNumber = `${payload?.order_number || ""}`.trim();
   const firstName = `${payload?.first_name || ""}`.trim();
@@ -40,34 +42,66 @@ export async function action({request}) {
     return cors(json({error: "Invalid email type."}, {status: 400}));
   }
 
-  if (!customerEmail || !orderNumber || !message || !subject) {
+  if (!customerEmail || !orderId || !orderNumber || !message || !subject) {
     return cors(
       json(
-        {error: "Customer email, order number, subject, and message are required."},
+        {
+          error:
+            "Order, customer email, order number, subject, and message are required.",
+        },
         {status: 400},
       ),
     );
   }
 
   try {
+    const sentAt = new Date();
     const result = await sendNotifyDockEvent({
       customerEmail,
       emailType,
       firstName,
       fromAddress,
       message,
+      orderId,
       orderNumber,
       sentByEmail: session.email || "",
       shop: shopName || session.shop,
       sku,
       subject,
     });
+    let historyWarning = "";
+
+    try {
+      await recordEmailHistory({
+        customerEmail,
+        emailType,
+        firstName,
+        fromAddress,
+        message,
+        metricName: result.metricName,
+        orderId,
+        orderNumber,
+        sentAt,
+        sentByEmail: session.email || "",
+        shop: session.shop,
+        sku,
+        subject,
+      });
+    } catch (historyError) {
+      historyWarning =
+        historyError instanceof Error
+          ? historyError.message
+          : "Notify Dock could not save this email to history.";
+    }
 
     return cors(
       json({
         ok: true,
         message:
-          "Klaviyo accepted the Notify Dock event. The matching Klaviyo flow will send the email.",
+          historyWarning
+            ? "Klaviyo accepted the Notify Dock event, but Notify Dock could not save the local history entry."
+            : "Klaviyo accepted the Notify Dock event. The matching Klaviyo flow will send the email.",
+        historyWarning,
         metricName: result.metricName,
       }),
     );

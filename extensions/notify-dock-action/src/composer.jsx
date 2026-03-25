@@ -20,6 +20,7 @@ export function useComposerState(target) {
   const launchedOrderId = getLaunchParam(launchUrl, "orderId");
   const launchedOrderIdFromPath = getOrderIdFromAdminUrl(launchUrl);
   const launchNonce = getLaunchParam(launchUrl, "openedAt");
+  const launchedShowHistory = getLaunchParam(launchUrl, "showHistory") === "1";
   const orderId =
     launchedOrderId || launchedOrderIdFromPath || data?.selected?.[0]?.id || null;
   const [loadingOrder, setLoadingOrder] = useState(true);
@@ -43,6 +44,11 @@ export function useComposerState(target) {
   const [subjectDirty, setSubjectDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [messageDirty, setMessageDirty] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyExpanded, setHistoryExpanded] = useState(launchedShowHistory);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState("");
+  const [historyReloadToken, setHistoryReloadToken] = useState(0);
 
   useEffect(() => {
     setLoadingOrder(Boolean(orderId));
@@ -57,7 +63,11 @@ export function useComposerState(target) {
     setFromAddress(FROM_OPTIONS[0].value);
     setSubjectDirty(false);
     setMessageDirty(false);
-  }, [launchNonce, orderId]);
+    setHistory([]);
+    setHistoryExpanded(launchedShowHistory);
+    setHistoryLoading(false);
+    setHistoryNotice("");
+  }, [launchedShowHistory, launchNonce, orderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,6 +198,68 @@ export function useComposerState(target) {
     }
   }, [emailType, orderNumber, sku, messageDirty]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      if (!orderId || loadingOrder) {
+        return;
+      }
+
+      setHistoryLoading(true);
+      setHistoryNotice("");
+
+      try {
+        const params = new URLSearchParams({
+          orderId,
+        });
+
+        if (orderNumber) {
+          params.set("orderNumber", orderNumber);
+        }
+
+        if (customerEmail) {
+          params.set("customerEmail", customerEmail);
+        }
+
+        const response = await fetch(`/api/email-history?${params.toString()}`);
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "Notify Dock could not load email history.",
+          );
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setHistory(Array.isArray(payload.history) ? payload.history : []);
+        setHistoryNotice(`${payload.warning || ""}`.trim());
+      } catch (historyError) {
+        if (!cancelled) {
+          setHistory([]);
+          setHistoryNotice(
+            historyError instanceof Error
+              ? historyError.message
+              : "Notify Dock could not load email history.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customerEmail, historyReloadToken, loadingOrder, orderId, orderNumber]);
+
   function resetTemplate() {
     setSubjectDirty(false);
     setSubject(
@@ -223,6 +295,7 @@ export function useComposerState(target) {
           first_name: firstName,
           from_address: fromAddress,
           message,
+          order_id: orderId,
           order_number: orderNumber,
           shop_name: shopName,
           sku,
@@ -241,6 +314,7 @@ export function useComposerState(target) {
           payload.message ||
           "Klaviyo accepted the Notify Dock event for delivery.",
       });
+      setHistoryReloadToken((value) => value + 1);
     } catch (error) {
       setStatus({
         tone: "critical",
@@ -261,8 +335,13 @@ export function useComposerState(target) {
     error,
     fromAddress,
     handleSend,
+    history,
+    historyExpanded,
+    historyLoading,
+    historyNotice,
     loadingOrder,
     message,
+    orderId,
     resetTemplate,
     sending,
     setEmailType: (value) => {
@@ -271,6 +350,7 @@ export function useComposerState(target) {
       setMessageDirty(false);
     },
     setFromAddress,
+    setHistoryExpanded,
     setMessage: (value) => {
       setMessage(value);
       setMessageDirty(true);

@@ -33,3 +33,26 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model NotifyDockEmailHistory {
+  id            String   @id @default(cuid())
+  shop          String
+  orderId       String
+  orderNumber   String
+  customerEmail String
+  firstName     String?
+  emailType     String
+  fromAddress   String?
+  subject       String
+  message       String   @db.Text
+  sentByEmail   String?
+  sku           String?
+  metricName    String?
+  source        String   @default("app")
+  sourceEventId String?  @unique
+  sentAt        DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([shop, orderId, sentAt(sort: Desc)])
+  @@index([shop, customerEmail, sentAt(sort: Desc)])
+}

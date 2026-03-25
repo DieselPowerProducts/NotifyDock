@@ -31,12 +31,17 @@ function ActionComposer() {
     error,
     fromAddress,
     handleSend,
+    history,
+    historyExpanded,
+    historyLoading,
+    historyNotice,
     loadingOrder,
     message,
     resetTemplate,
     sending,
     setEmailType,
     setFromAddress,
+    setHistoryExpanded,
     setMessage,
     setStatus,
     setSubject,
@@ -64,6 +69,33 @@ function ActionComposer() {
         <Text>
           Compose a backorder or will-call email to keep the customer up to date.
         </Text>
+
+        {history.length ? (
+          <BlockStack gap="base">
+            <InlineStack inlineAlignment="start">
+              <Button
+                onPress={() => {
+                  setHistoryExpanded(!historyExpanded);
+                }}
+                variant="secondary"
+              >
+                {historyExpanded
+                  ? `Hide history (${history.length})`
+                  : `View history (${history.length})`}
+              </Button>
+            </InlineStack>
+
+            {historyExpanded ? <EmailHistoryList history={history} /> : null}
+          </BlockStack>
+        ) : null}
+
+        {historyLoading ? <Text>Loading email history...</Text> : null}
+
+        {historyNotice ? <Text>{historyNotice}</Text> : null}
+
+        {!loadingOrder && !historyLoading && !history.length && !historyNotice ? (
+          <Text>No email history yet for this order.</Text>
+        ) : null}
 
         {loadingOrder ? (
           <ProgressIndicator size="small" accessibilityLabel="Loading order details" />
@@ -135,4 +167,38 @@ function ActionComposer() {
       </BlockStack>
     </AdminAction>
   );
+}
+
+function EmailHistoryList({history}) {
+  return (
+    <BlockStack gap="base">
+      {history.map((entry) => (
+        <BlockStack key={entry.id} gap="base">
+          <Text>{`${labelEmailType(entry.emailType)} | ${formatHistoryTimestamp(entry.sentAt)}`}</Text>
+          <Text>{`To: ${entry.customerEmail}`}</Text>
+          {entry.fromAddress ? <Text>{`From: ${entry.fromAddress}`}</Text> : null}
+          <Text>{`Subject: ${entry.subject}`}</Text>
+        </BlockStack>
+      ))}
+    </BlockStack>
+  );
+}
+
+function labelEmailType(emailType) {
+  if (emailType === "will_call_ready") {
+    return "Will Call Ready";
+  }
+
+  return "Backorder Notice";
+}
+
+function formatHistoryTimestamp(sentAt) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(sentAt));
+  } catch (_error) {
+    return sentAt;
+  }
 }
