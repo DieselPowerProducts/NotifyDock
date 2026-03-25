@@ -3,6 +3,7 @@ import {useApi} from "@shopify/ui-extensions-react/admin";
 
 export const EMAIL_TYPES = [
   {label: "Backorder Notice", value: "backorder_notice"},
+  {label: "Shipping Delay", value: "shipping_delay"},
   {label: "Will Call Ready", value: "will_call_ready"},
 ];
 
@@ -380,6 +381,10 @@ function buildSubject({emailType, orderNumber, shopName}) {
     return `Pick Up on Location Order ${orderNumber || "#"}`.trim();
   }
 
+  if (emailType === "shipping_delay") {
+    return `Shipping delay for order ${orderNumber || "#"}`.trim();
+  }
+
   return `Message from ${shopName || "{{ shop.name }}"}`.trim();
 }
 
@@ -389,6 +394,27 @@ function buildMessage({emailType, orderNumber, sku}) {
       `Hello,`,
       `Your order has been processed. We will contact you once your complete order is here and ready for pick up at our Will Call.`,
       `Thank You.`,
+    ].join("\n");
+  }
+
+  if (emailType === "shipping_delay") {
+    return [
+      `Thanks so much for shopping with Diesel Power Products, we really do appreciate it. We wanted to inform you that the below product(s) you ordered is currently on backorder:`,
+      ``,
+      `<center><b>${sku || "Insert SKU"}</b></center>`,
+      ``,
+      `Based upon information from the manufacturer, the current ship date of your part(s) is:`,
+      ``,
+      `Insert Ship date`,
+      ``,
+      `OPTIONS:`,
+      `HANG TIGHT: If you are okay to wait, you are good to go! Once we have tracking, or any other updates we will forward them to this same email address.`,
+      ``,
+      `CHECK OPTIONS: If you would like to have one of our sales technicians look into another comparable option, which is on the shelf, ready to ship, we can help. The fastest way to check options is a phone call. Otherwise, feel free to respond to this e-mail and we will have someone get in contact with you within 1-2 business days. Keep in mind, some of the items we sell may not have another similar option. If that is the case, we will let you know.`,
+      ``,
+      `CANCEL: This is obviously our least favorite option; however, we totally understand. If the backorder timeline is too long, we have no problem cancelling and refunding the backordered item(s). Just let us know and we will make it happen. Refunds typically take 2-3 business days to hit your account.`,
+      ``,
+      `QUESTIONS? If you have questions on anything, please feel free to respond to this e-mail. You can also reach us by phone or Chat through the website, M-F 6AM-6PM PST.`,
     ].join("\n");
   }
 

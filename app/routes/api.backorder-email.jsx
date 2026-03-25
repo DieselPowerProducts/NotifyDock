@@ -3,7 +3,11 @@ import {recordEmailHistory} from "../email-history.server";
 import {authenticate} from "../shopify.server";
 import {sendNotifyDockEvent} from "../klaviyo.server";
 
-const VALID_EMAIL_TYPES = new Set(["backorder_notice", "will_call_ready"]);
+const VALID_EMAIL_TYPES = new Set([
+  "backorder_notice",
+  "shipping_delay",
+  "will_call_ready",
+]);
 
 export async function loader({request}) {
   const {cors} = await authenticate.admin(request);
@@ -123,6 +127,10 @@ export async function action({request}) {
 function buildSubject({emailType, orderNumber}) {
   if (emailType === "will_call_ready") {
     return `Pick Up on Location Order ${orderNumber}`.trim();
+  }
+
+  if (emailType === "shipping_delay") {
+    return `Shipping delay for order ${orderNumber}`.trim();
   }
 
   return `Backorder status for order ${orderNumber}`.trim();

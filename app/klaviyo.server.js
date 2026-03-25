@@ -5,6 +5,9 @@ export const METRIC_NAMES = {
   backorder_notice:
     process.env.KLAVIYO_BACKORDER_METRIC_NAME ||
     "Notify Dock Backorder Email Requested",
+  shipping_delay:
+    process.env.KLAVIYO_SHIPPING_DELAY_METRIC_NAME ||
+    "Notify Dock Shipping Delay Email Requested",
   will_call_ready:
     process.env.KLAVIYO_WILL_CALL_METRIC_NAME ||
     "Notify Dock Will Call Email Requested",

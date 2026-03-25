@@ -171,6 +171,10 @@ function buildFallbackSubject({emailType, orderNumber}) {
     return `Pick Up on Location Order ${orderNumber}`.trim();
   }
 
+  if (emailType === "shipping_delay") {
+    return `Shipping delay for order ${orderNumber}`.trim();
+  }
+
   return `Backorder status for order ${orderNumber}`.trim();
 }
 

@@ -71,7 +71,7 @@ function ActionComposer() {
     >
       <BlockStack gap="base">
         <Text>
-          Compose a backorder or will-call email to keep the customer up to date.
+          Compose a backorder, shipping delay, or will-call email to keep the customer up to date.
         </Text>
 
         {history.length ? (
@@ -232,6 +232,10 @@ function EmailHistoryItem({entry, isSelected}) {
 function labelEmailType(emailType) {
   if (emailType === "will_call_ready") {
     return "Will Call Ready";
+  }
+
+  if (emailType === "shipping_delay") {
+    return "Shipping Delay";
   }
 
   return "Backorder Notice";

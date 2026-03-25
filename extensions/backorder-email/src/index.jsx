@@ -122,7 +122,7 @@ function BlockLauncher() {
     <AdminBlock title="Notify Dock">
       <BlockStack gap="base">
         <Text>
-          Open the full composer in a popup to review and send a backorder or will-call email.
+          Open the full composer in a popup to review and send a backorder, shipping delay, or will-call email.
         </Text>
 
         <Button
@@ -200,6 +200,10 @@ function EmailHistoryList({history, navigation, orderId}) {
 function labelEmailType(emailType) {
   if (emailType === "will_call_ready") {
     return "Will Call Ready";
+  }
+
+  if (emailType === "shipping_delay") {
+    return "Shipping Delay";
   }
 
   return "Backorder Notice";
