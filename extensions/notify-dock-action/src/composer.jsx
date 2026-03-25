@@ -18,6 +18,7 @@ export function useComposerState(target) {
   const api = useApi(target);
   const {data} = api;
   const launchUrl = getLaunchUrl(api.intents?.launchUrl);
+  const launchMode = getLaunchParam(launchUrl, "mode");
   const launchedOrderId = getLaunchParam(launchUrl, "orderId");
   const launchedOrderIdFromPath = getOrderIdFromAdminUrl(launchUrl);
   const launchedHistoryId = getLaunchParam(launchUrl, "historyId");
@@ -345,6 +346,7 @@ export function useComposerState(target) {
     historyExpanded,
     historyLoading,
     historyNotice,
+    launchMode,
     loadingOrder,
     message,
     orderId,

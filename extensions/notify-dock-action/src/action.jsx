@@ -38,6 +38,7 @@ function ActionComposer() {
     historyExpanded,
     historyLoading,
     historyNotice,
+    launchMode,
     loadingOrder,
     message,
     resetTemplate,
@@ -54,6 +55,30 @@ function ActionComposer() {
   } = useComposerState(TARGET);
 
   const canSend = canSendComposer({customerEmail, message, subject});
+  const selectedHistoryEntry =
+    history.find((entry) => entry.id === selectedHistoryId) || null;
+
+  if (launchMode === "history_email") {
+    return (
+      <AdminAction
+        loading={historyLoading || loadingOrder}
+        secondaryAction={<Button onPress={api.close}>Close</Button>}
+        title="Email"
+      >
+        <BlockStack gap="base">
+          {historyNotice ? <Text>{historyNotice}</Text> : null}
+
+          {!historyLoading && !loadingOrder && selectedHistoryEntry ? (
+            <EmailPreviewContent entry={selectedHistoryEntry} />
+          ) : null}
+
+          {!historyLoading && !loadingOrder && !selectedHistoryEntry && !historyNotice ? (
+            <Text>This email could not be loaded.</Text>
+          ) : null}
+        </BlockStack>
+      </AdminAction>
+    );
+  }
 
   return (
     <AdminAction
@@ -82,7 +107,7 @@ function ActionComposer() {
                   setHistoryExpanded(!historyExpanded);
                 }}
                 variant="secondary"
-            >
+              >
                 {historyExpanded
                   ? `Hide history (${history.length})`
                   : `View history (${history.length})`}
@@ -220,11 +245,28 @@ function EmailHistoryItem({entry, isSelected}) {
       </InlineStack>
 
       {expanded ? (
-        <BlockStack gap="small">
-          <Text fontWeight="bold">{entry.subject}</Text>
-          <Text>{formatEmailPreview(entry.message)}</Text>
-        </BlockStack>
+        <EmailPreviewContent entry={entry} />
       ) : null}
+    </BlockStack>
+  );
+}
+
+function EmailPreviewContent({entry}) {
+  const paragraphs = buildEmailPreviewParagraphs(entry.message);
+
+  return (
+    <BlockStack gap="small">
+      <Text fontWeight="bold">{entry.subject}</Text>
+
+      {paragraphs.length ? (
+        <BlockStack gap="small">
+          {paragraphs.map((paragraph, index) => (
+            <Text key={`${entry.id}-paragraph-${index}`}>{paragraph}</Text>
+          ))}
+        </BlockStack>
+      ) : (
+        <Text>No email body saved for this email.</Text>
+      )}
     </BlockStack>
   );
 }
@@ -274,4 +316,17 @@ function formatEmailPreview(message) {
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .trim();
+}
+
+function buildEmailPreviewParagraphs(message) {
+  return formatEmailPreview(message)
+    .split(/\n\s*\n/)
+    .map((paragraph) =>
+      paragraph
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean);
 }

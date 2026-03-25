@@ -3,6 +3,7 @@ import {
   AdminBlock,
   Badge,
   BlockStack,
+  Box,
   Button,
   Link,
   InlineStack,
@@ -140,7 +141,9 @@ function BlockLauncher() {
           Open composer
         </Button>
 
-        <Text>Email history</Text>
+        <Box paddingBlockStart="base">
+          <Text>Email history</Text>
+        </Box>
 
         {historyLoading ? <Text>Loading email history...</Text> : null}
 
@@ -227,9 +230,9 @@ function buildHistorySummary(entry) {
 function openHistoryEmail({entryId, navigation, orderId}) {
   const params = new URLSearchParams({
     historyId: entryId,
+    mode: "history_email",
     openedAt: String(Date.now()),
     orderId,
-    showHistory: "1",
   });
 
   navigation.navigate(`extension:${ACTION_HANDLE}?${params.toString()}`);
