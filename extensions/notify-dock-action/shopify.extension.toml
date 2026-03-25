@@ -1,0 +1,12 @@
+api_version = "2025-07"
+
+[[extensions]]
+name = "t:name"
+handle = "notify-dock-action"
+uid = "139eddc6-ae29-8a0c-7016-6c5d33ebdc006cc48293"
+type = "ui_extension"
+description = "Open a full backorder and will-call email composer on the Shopify Admin order page."
+
+  [[extensions.targeting]]
+  module = "./src/action.jsx"
+  target = "admin.order-details.action.render"

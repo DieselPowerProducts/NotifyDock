@@ -1,0 +1,12 @@
+api_version = "2025-07"
+
+[[extensions]]
+name = "t:name"
+handle = "backorder-email"
+uid = "6724086f-3ed2-410c-3f42-c621e935a35ff90ef274"
+type = "ui_extension"
+description = "Render a backorder and will-call email composer on the Shopify Admin order page."
+
+  [[extensions.targeting]]
+  module = "./src/index.jsx"
+  target = "admin.order-details.block.render"
