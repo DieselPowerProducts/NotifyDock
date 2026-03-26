@@ -1,5 +1,6 @@
 import {json} from "@remix-run/node";
 import {recordEmailHistory} from "../email-history.server";
+import {buildNotifyDockMessage} from "../notify-dock-email-template.server";
 import {authenticate} from "../shopify.server";
 import {sendNotifyDockEvent} from "../klaviyo.server";
 
@@ -39,10 +40,21 @@ export async function action({request}) {
   const firstName = `${payload?.first_name || ""}`.trim();
   const customerEmail = `${payload?.customer_email || ""}`.trim();
   const fromAddress = `${payload?.from_address || ""}`.trim();
-  const message = `${payload?.message || ""}`.trim();
+  const productImageUrl = `${payload?.product_image_url || ""}`.trim();
+  const productTitle = `${payload?.product_title || ""}`.trim();
+  const productVariantTitle = `${payload?.product_variant_title || ""}`.trim();
   const shopName = `${payload?.shop_name || ""}`.trim();
   const subject =
     `${payload?.subject || buildSubject({emailType, orderNumber})}`.trim();
+  const message = buildNotifyDockMessage({
+    emailType,
+    firstName,
+    orderNumber,
+    productTitle,
+    productVariantTitle,
+    shipDate,
+    sku,
+  }).trim();
 
   if (!VALID_EMAIL_TYPES.has(emailType)) {
     return cors(json({error: "Invalid email type."}, {status: 400}));
@@ -52,14 +64,16 @@ export async function action({request}) {
     !customerEmail ||
     !orderId ||
     !orderNumber ||
+    !sku ||
+    !productTitle ||
     !subject ||
-    !isMessageAllowed({emailType, message})
+    !isPayloadAllowed({emailType, shipDate})
   ) {
     return cors(
       json(
         {
           error:
-            "Order, customer email, order number, and subject are required. Message is required for this email type.",
+            "Order, customer email, order number, SKU, product title, and subject are required. Ship date is required for this email type.",
         },
         {status: 400},
       ),
@@ -76,6 +90,9 @@ export async function action({request}) {
       message,
       orderId,
       orderNumber,
+      productImageUrl,
+      productTitle,
+      productVariantTitle,
       sentByEmail: session.email || "",
       shipDate,
       shop: shopName || session.shop,
@@ -149,6 +166,10 @@ function buildSubject({emailType, orderNumber}) {
   return `Backorder status for order ${orderNumber}`.trim();
 }
 
-function isMessageAllowed({emailType, message}) {
-  return emailType !== "will_call_in_progress" || Boolean(message);
+function isPayloadAllowed({emailType, shipDate}) {
+  if (emailType === "backorder_notice" || emailType === "shipping_delay") {
+    return Boolean(shipDate);
+  }
+
+  return true;
 }
