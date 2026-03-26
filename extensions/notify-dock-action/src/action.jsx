@@ -27,7 +27,6 @@ import {
 } from "./composer.jsx";
 
 const TARGET = "admin.order-details.action.render";
-const APP_URL = "https://notify-dock.vercel.app";
 
 export default reactExtension(TARGET, () => <ActionComposer />);
 
@@ -79,15 +78,77 @@ function ActionComposer() {
   });
   const selectedHistoryEntry =
     history.find((entry) => entry.id === selectedHistoryId) || null;
-  const renderedPreviewUrl = buildRenderedPreviewUrl({
-    customerEmail,
-    emailType,
-    firstName,
-    orderNumber,
-    products,
-    shipDate,
-    sku,
-  });
+  const [renderedPreviewError, setRenderedPreviewError] = useState("");
+  const [renderedPreviewLoading, setRenderedPreviewLoading] = useState(false);
+  const [renderedPreviewUrl, setRenderedPreviewUrl] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const payload = buildRenderedPreviewPayload({
+      customerEmail,
+      emailType,
+      firstName,
+      orderNumber,
+      products,
+      shipDate,
+      sku,
+    });
+
+    if (!payload.emailType) {
+      setRenderedPreviewError("");
+      setRenderedPreviewLoading(false);
+      setRenderedPreviewUrl("");
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setRenderedPreviewLoading(true);
+      setRenderedPreviewError("");
+
+      try {
+        const response = await fetch("/api/notify-dock-preview-link", {
+          body: JSON.stringify(payload),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || "Notify Dock could not prepare the rendered preview.",
+          );
+        }
+
+        setRenderedPreviewUrl(`${result.url || ""}`.trim());
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setRenderedPreviewUrl("");
+        setRenderedPreviewError(
+          error instanceof Error
+            ? error.message
+            : "Notify Dock could not prepare the rendered preview.",
+        );
+      } finally {
+        if (!cancelled) {
+          setRenderedPreviewLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [customerEmail, emailType, firstName, orderNumber, products, shipDate, sku]);
 
   if (launchMode === "history_email") {
     return (
@@ -239,6 +300,10 @@ function ActionComposer() {
 
         {lookupError ? <Banner tone="warning">{lookupError}</Banner> : null}
 
+        {renderedPreviewError ? (
+          <Banner tone="warning">{renderedPreviewError}</Banner>
+        ) : null}
+
         <TemplatePreview
           customerEmail={customerEmail}
           emailType={emailType}
@@ -250,13 +315,20 @@ function ActionComposer() {
         />
 
         <InlineStack inlineAlignment="start" gap="base">
-          <Button
-            href={renderedPreviewUrl}
-            target="_blank"
-            variant="secondary"
-          >
-            Rendered preview
-          </Button>
+          {renderedPreviewUrl ? (
+            <Button
+              disabled={renderedPreviewLoading}
+              href={renderedPreviewUrl}
+              target="_blank"
+              variant="secondary"
+            >
+              {renderedPreviewLoading ? "Preparing preview..." : "Rendered preview"}
+            </Button>
+          ) : (
+            <Button disabled variant="secondary">
+              {renderedPreviewLoading ? "Preparing preview..." : "Rendered preview"}
+            </Button>
+          )}
 
           <Button onPress={resetComposer} variant="secondary">
             Reset defaults
@@ -599,7 +671,7 @@ function buildEmailPreviewParagraphs(message) {
     .filter(Boolean);
 }
 
-function buildRenderedPreviewUrl({
+function buildRenderedPreviewPayload({
   customerEmail,
   emailType,
   firstName,
@@ -608,15 +680,13 @@ function buildRenderedPreviewUrl({
   shipDate,
   sku,
 }) {
-  const params = new URLSearchParams({
+  return {
     customerEmail: customerEmail || "",
     emailType: emailType || "",
     firstName: firstName || "",
     orderNumber: orderNumber || "",
-    products: JSON.stringify(products || []),
+    products: products || [],
     shipDate: shipDate || "",
     sku: sku || "",
-  });
-
-  return `${APP_URL}/app/notify-dock-preview?${params.toString()}`;
+  };
 }
