@@ -3,21 +3,31 @@ import {useLoaderData} from "@remix-run/react";
 import {TitleBar} from "@shopify/app-bridge-react";
 import {Banner, BlockStack, Card, Layout, Page, Text} from "@shopify/polaris";
 import {renderNotifyDockTemplate} from "../klaviyo.server";
+import {
+  normalizePreviewPayload,
+  sanitizeRenderedEmailHtml,
+  verifyNotifyDockPreviewToken,
+} from "../notify-dock-preview-token.server";
 import {authenticate} from "../shopify.server";
 
 export async function loader({request}) {
   await authenticate.admin(request);
 
   const url = new URL(request.url);
-  const emailType = `${url.searchParams.get("emailType") || ""}`.trim();
-  const customerEmail = `${url.searchParams.get("customerEmail") || ""}`.trim();
-  const firstName = `${url.searchParams.get("firstName") || ""}`.trim();
-  const orderNumber = `${url.searchParams.get("orderNumber") || ""}`.trim();
-  const shipDate = `${url.searchParams.get("shipDate") || ""}`.trim();
-  const sku = `${url.searchParams.get("sku") || ""}`.trim();
-  const products = parseProducts(url.searchParams.get("products"));
+  const token = `${url.searchParams.get("token") || ""}`.trim();
+  const payload = token
+    ? verifyNotifyDockPreviewToken(token)
+    : normalizePreviewPayload({
+        customerEmail: `${url.searchParams.get("customerEmail") || ""}`.trim(),
+        emailType: `${url.searchParams.get("emailType") || ""}`.trim(),
+        firstName: `${url.searchParams.get("firstName") || ""}`.trim(),
+        orderNumber: `${url.searchParams.get("orderNumber") || ""}`.trim(),
+        products: parseProducts(url.searchParams.get("products")),
+        shipDate: `${url.searchParams.get("shipDate") || ""}`.trim(),
+        sku: `${url.searchParams.get("sku") || ""}`.trim(),
+      });
 
-  if (!emailType) {
+  if (!payload.emailType) {
     return json(
       {
         html: "",
@@ -29,15 +39,7 @@ export async function loader({request}) {
   }
 
   try {
-    const rendered = await renderNotifyDockTemplate({
-      customerEmail,
-      emailType,
-      firstName,
-      orderNumber,
-      products,
-      shipDate,
-      sku,
-    });
+    const rendered = await renderNotifyDockTemplate(payload);
 
     return json({
       html: sanitizeRenderedEmailHtml(rendered.html),
@@ -124,17 +126,4 @@ function parseProducts(value) {
   } catch (_error) {
     return [];
   }
-}
-
-function sanitizeRenderedEmailHtml(html) {
-  return `${html || ""}`
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/\shref="[^"]*"/gi, "")
-    .replace(/\shref='[^']*'/gi, "")
-    .replace(/\starget="[^"]*"/gi, "")
-    .replace(/\starget='[^']*'/gi, "")
-    .replace(/\saction="[^"]*"/gi, "")
-    .replace(/\saction='[^']*'/gi, "");
 }

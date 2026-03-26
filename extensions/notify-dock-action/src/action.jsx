@@ -77,7 +77,7 @@ function ActionComposer() {
   const previewProducts = buildPreviewProducts(products, sku);
   const [renderedPreviewError, setRenderedPreviewError] = useState("");
   const [renderedPreviewLoading, setRenderedPreviewLoading] = useState(false);
-  const [renderedPreviewUrl, setRenderedPreviewUrl] = useState("");
+  const [renderedPreviewHref, setRenderedPreviewHref] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +94,7 @@ function ActionComposer() {
     if (!payload.emailType) {
       setRenderedPreviewError("");
       setRenderedPreviewLoading(false);
-      setRenderedPreviewUrl("");
+      setRenderedPreviewHref("");
       return;
     }
 
@@ -122,13 +122,16 @@ function ActionComposer() {
           );
         }
 
-        setRenderedPreviewUrl(`${result.url || ""}`.trim());
+        const embeddedPath = `${result.embeddedPath || ""}`.trim();
+        const fallbackUrl = `${result.url || ""}`.trim();
+
+        setRenderedPreviewHref(embeddedPath ? `app://${embeddedPath.replace(/^\//, "")}` : fallbackUrl);
       } catch (error) {
         if (cancelled) {
           return;
         }
 
-        setRenderedPreviewUrl("");
+        setRenderedPreviewHref("");
         setRenderedPreviewError(
           error instanceof Error
             ? error.message
@@ -294,10 +297,10 @@ function ActionComposer() {
         {previewProducts.length ? <ProductPreviewList products={previewProducts} /> : null}
 
         <InlineStack inlineAlignment="start" gap="base">
-          {renderedPreviewUrl ? (
+          {renderedPreviewHref ? (
             <Button
               disabled={renderedPreviewLoading}
-              href={renderedPreviewUrl}
+              href={renderedPreviewHref}
               target="_blank"
               variant="secondary"
             >

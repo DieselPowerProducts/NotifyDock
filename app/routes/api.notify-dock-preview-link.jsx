@@ -35,16 +35,18 @@ export async function action({request}) {
   }
 
   const token = createNotifyDockPreviewToken(previewPayload);
-  const previewUrl = new URL(
+  const publicPreviewUrl = new URL(
     "/notify-dock-preview",
     process.env.SHOPIFY_APP_URL || request.url,
   );
+  const embeddedPreviewPath = `/app/notify-dock-preview?token=${encodeURIComponent(token)}`;
 
-  previewUrl.searchParams.set("token", token);
+  publicPreviewUrl.searchParams.set("token", token);
 
   return cors(
     json({
-      url: previewUrl.toString(),
+      embeddedPath: embeddedPreviewPath,
+      url: publicPreviewUrl.toString(),
     }),
   );
 }
