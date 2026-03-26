@@ -122,7 +122,7 @@ function BlockLauncher() {
     <AdminBlock title="Notify Dock">
       <BlockStack gap="base">
         <Text>
-          Open the full composer in a popup to review and send a backorder, shipping delay, or will-call email.
+          Open the Composer to Review and Send Backorder, Shipping Delay, or Will-Call email&apos;s.
         </Text>
 
         <Button

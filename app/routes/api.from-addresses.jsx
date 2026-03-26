@@ -1,6 +1,8 @@
 import {json} from "@remix-run/node";
 import {authenticate} from "../shopify.server";
 
+const DEFAULT_FROM_ADDRESS = "orders@dieselpowerproducts.com";
+
 const SHOP_QUERY = `#graphql
   query NotifyDockShopSender {
     shop {
@@ -49,16 +51,16 @@ export async function loader({request}) {
     );
   } catch (error) {
     return cors(
-      json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Notify Dock could not load sender emails.",
-          options: [],
-        },
-        {status: 500},
-      ),
+      json({
+        options: buildFromOptions({
+          shop: null,
+          staffOptions: [],
+        }),
+        warning:
+          error instanceof Error
+            ? error.message
+            : "Notify Dock could not load sender emails.",
+      }),
     );
   }
 }
@@ -128,13 +130,24 @@ async function loadStaffMembers(admin) {
 function buildFromOptions({shop, staffOptions}) {
   const options = [];
   const seen = new Set();
-  const shopEmail = shop.contactEmail || shop.email;
+  const defaultLabel = formatSenderLabel({
+    email: DEFAULT_FROM_ADDRESS,
+    name: shop?.name || "Orders",
+  });
+
+  options.push({
+    label: defaultLabel,
+    value: DEFAULT_FROM_ADDRESS,
+  });
+  seen.add(DEFAULT_FROM_ADDRESS.toLowerCase());
+
+  const shopEmail = `${shop?.contactEmail || shop?.email || ""}`.trim();
 
   if (shopEmail) {
     options.push({
       label: formatSenderLabel({
         email: shopEmail,
-        name: shop.name || "Shop",
+        name: shop?.name || "Shop",
       }),
       value: shopEmail,
     });

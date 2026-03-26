@@ -8,7 +8,12 @@ export const EMAIL_TYPES = [
   {label: "Will Call - In Progress", value: "will_call_in_progress"},
 ];
 
-const DEFAULT_FROM_OPTIONS = [];
+const DEFAULT_FROM_OPTIONS = [
+  {
+    label: "\"Orders\" <orders@dieselpowerproducts.com>",
+    value: "orders@dieselpowerproducts.com",
+  },
+];
 
 export function useComposerState(target) {
   const api = useApi(target);
@@ -40,7 +45,7 @@ export function useComposerState(target) {
   const [shipDate, setShipDate] = useState("");
   const [products, setProducts] = useState([]);
   const [emailType, setEmailType] = useState("backorder_notice");
-  const [fromAddress, setFromAddress] = useState("");
+  const [fromAddress, setFromAddress] = useState(DEFAULT_FROM_OPTIONS[0].value);
   const [fromOptions, setFromOptions] = useState(DEFAULT_FROM_OPTIONS);
   const [fromOptionsLoading, setFromOptionsLoading] = useState(false);
   const [fromOptionsNotice, setFromOptionsNotice] = useState("");
@@ -76,7 +81,7 @@ export function useComposerState(target) {
     setShipDate("");
     setProducts([]);
     setEmailType("backorder_notice");
-    setFromAddress("");
+    setFromAddress(DEFAULT_FROM_OPTIONS[0].value);
     setFromOptions(DEFAULT_FROM_OPTIONS);
     setFromOptionsLoading(false);
     setFromOptionsNotice("");
@@ -238,13 +243,13 @@ export function useComposerState(target) {
           return;
         }
 
-        setFromOptions([]);
+        setFromOptions(DEFAULT_FROM_OPTIONS);
         setFromOptionsNotice(
           fromOptionsError instanceof Error
             ? fromOptionsError.message
             : "Notify Dock could not load sender emails.",
         );
-        setFromAddress("");
+        setFromAddress(DEFAULT_FROM_OPTIONS[0].value);
       } finally {
         if (!cancelled) {
           setFromOptionsLoading(false);
