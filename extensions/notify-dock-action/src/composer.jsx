@@ -23,37 +23,52 @@ export function useComposerState(target) {
   const orderId =
     launchedOrderId || launchedOrderIdFromPath || data?.selected?.[0]?.id || null;
   const [loadingOrder, setLoadingOrder] = useState(true);
+  const [loadingProduct, setLoadingProduct] = useState(false);
   const [error, setError] = useState("");
+  const [lookupError, setLookupError] = useState("");
   const [status, setStatus] = useState(null);
+  const [sending, setSending] = useState(false);
   const [shopName, setShopName] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [defaultSku, setDefaultSku] = useState("");
   const [sku, setSku] = useState("");
+  const [shipDate, setShipDate] = useState("");
+  const [productTitle, setProductTitle] = useState("");
+  const [productVariantTitle, setProductVariantTitle] = useState("");
+  const [productImageUrl, setProductImageUrl] = useState("");
+  const [productImageAlt, setProductImageAlt] = useState("");
   const [emailType, setEmailType] = useState("backorder_notice");
   const [fromAddress, setFromAddress] = useState(FROM_OPTIONS[0].value);
   const [subject, setSubject] = useState(
     buildSubject({
       emailType: "backorder_notice",
       orderNumber: "",
-      shopName: "",
     }),
   );
   const [subjectDirty, setSubjectDirty] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageDirty, setMessageDirty] = useState(false);
 
   useEffect(() => {
     setLoadingOrder(Boolean(orderId));
+    setLoadingProduct(false);
     setError("");
+    setLookupError("");
     setStatus(null);
     setShopName("");
     setOrderNumber("");
+    setFirstName("");
     setCustomerEmail("");
+    setDefaultSku("");
     setSku("");
+    setShipDate("");
+    setProductTitle("");
+    setProductVariantTitle("");
+    setProductImageUrl("");
+    setProductImageAlt("");
     setEmailType("backorder_notice");
     setFromAddress(FROM_OPTIONS[0].value);
     setSubjectDirty(false);
-    setMessageDirty(false);
   }, [launchNonce, orderId]);
 
   useEffect(() => {
@@ -124,21 +139,31 @@ export function useComposerState(target) {
         }
 
         const order = result.data.order;
-        const skus = Array.from(
-          new Set(
-            order.lineItems.edges
-              .map(({node}) => node.sku || node.title)
-              .filter(Boolean),
-          ),
+        const lineItems = order.lineItems.edges
+          .map(({node}) => ({
+            title: node?.title || "",
+            sku: node?.sku || "",
+          }))
+          .filter(({title, sku}) => title || sku);
+        const uniqueSkus = Array.from(
+          new Set(lineItems.map(({sku, title}) => sku || title).filter(Boolean)),
         );
-        const customerEmail = [
-          order.customer?.email,
-          order.email,
+        const primaryLineItem = lineItems.find(({sku}) => sku) || lineItems[0];
+        const customerEmail = [order.customer?.email, order.email].find(Boolean) || "";
+        const firstName = [
+          order.customer?.firstName,
+          order.shippingAddress?.firstName,
+          order.billingAddress?.firstName,
         ].find(Boolean) || "";
+        const resolvedSku = primaryLineItem?.sku || uniqueSkus[0] || "";
 
         setOrderNumber(order.name || "");
+        setFirstName(firstName);
         setCustomerEmail(customerEmail);
-        setSku(skus.join(", "));
+        setDefaultSku(resolvedSku);
+        setSku(resolvedSku);
+        setProductTitle(primaryLineItem?.title || "");
+        setProductVariantTitle("");
         setLoadingOrder(false);
       } catch (_loadError) {
         if (!cancelled) {
@@ -161,49 +186,137 @@ export function useComposerState(target) {
         buildSubject({
           emailType,
           orderNumber,
-          shopName,
         }),
       );
     }
-  }, [emailType, orderNumber, shopName, subjectDirty]);
+  }, [emailType, orderNumber, subjectDirty]);
 
   useEffect(() => {
-    if (!messageDirty) {
-      setMessage(
-        buildMessage({
-          emailType,
-          orderNumber,
-          sku,
-        }),
-      );
-    }
-  }, [emailType, orderNumber, sku, messageDirty]);
+    const normalizedSku = `${sku || ""}`.trim();
 
-  function resetTemplate() {
+    if (!normalizedSku) {
+      setLoadingProduct(false);
+      setLookupError("");
+      setProductTitle("");
+      setProductVariantTitle("");
+      setProductImageUrl("");
+      setProductImageAlt("");
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(async () => {
+      setLoadingProduct(true);
+      setLookupError("");
+
+      try {
+        const response = await fetch(
+          `/api/product-by-sku?sku=${encodeURIComponent(normalizedSku)}`,
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Unable to load product details for this SKU.");
+        }
+
+        setProductTitle(payload.product?.title || "");
+        setProductVariantTitle(payload.product?.variantTitle || "");
+        setProductImageUrl(payload.product?.imageUrl || "");
+        setProductImageAlt(payload.product?.imageAlt || "");
+      } catch (lookupError) {
+        if (cancelled) {
+          return;
+        }
+
+        setProductTitle("");
+        setProductImageUrl("");
+        setProductImageAlt("");
+        setProductVariantTitle("");
+
+        setLookupError(
+          lookupError instanceof Error
+            ? lookupError.message
+            : "Unable to load product details for this SKU.",
+        );
+      } finally {
+        if (!cancelled) {
+          setLoadingProduct(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [sku]);
+
+  function resetComposer() {
     setSubjectDirty(false);
     setSubject(
       buildSubject({
         emailType,
         orderNumber,
-        shopName,
       }),
     );
-    setMessageDirty(false);
-    setMessage(
-      buildMessage({
-        emailType,
-        orderNumber,
-        sku,
-      }),
-    );
+    setShipDate("");
+    setSku(defaultSku);
+    setLookupError("");
+    setStatus(null);
   }
 
   async function handleSend() {
-    setStatus({
-      tone: "info",
-      message:
-        "UI preview is installed. Email sending stays disabled until the app backend is connected to Klaviyo.",
-    });
+    setSending(true);
+    setStatus(null);
+
+    try {
+      const response = await fetch("/api/backorder-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer_email: customerEmail,
+          email_type: emailType,
+          first_name: firstName,
+          from_address: fromAddress,
+          order_number: orderNumber,
+          product_image_url: productImageUrl,
+          product_title: productTitle,
+          product_variant_title: productVariantTitle,
+          ship_date: shipDate,
+          shop_name: shopName,
+          sku,
+          subject,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Notify Dock could not send this email.");
+      }
+
+      setStatus({
+        tone: "success",
+        message:
+          payload.message ||
+          "Klaviyo accepted the Notify Dock event for delivery.",
+      });
+    } catch (error) {
+      setStatus({
+        tone: "critical",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Notify Dock could not send this email.",
+      });
+    } finally {
+      setSending(false);
+    }
   }
 
   return {
@@ -211,67 +324,72 @@ export function useComposerState(target) {
     customerEmail,
     emailType,
     error,
+    firstName,
     fromAddress,
     handleSend,
     loadingOrder,
-    message,
-    resetTemplate,
+    loadingProduct,
+    lookupError,
+    orderNumber,
+    productImageAlt,
+    productImageUrl,
+    productTitle,
+    productVariantTitle,
+    resetComposer,
+    sending,
     setEmailType: (value) => {
       setEmailType(value);
       setSubjectDirty(false);
-      setMessageDirty(false);
+      setStatus(null);
     },
     setFromAddress,
-    setMessage: (value) => {
-      setMessage(value);
-      setMessageDirty(true);
+    setShipDate: (value) => {
+      setShipDate(value);
+      setStatus(null);
+    },
+    setSku: (value) => {
+      setSku(value);
+      setStatus(null);
     },
     setStatus,
     setSubject: (value) => {
       setSubject(value);
       setSubjectDirty(true);
     },
+    shipDate,
+    sku,
     status,
     subject,
   };
 }
 
-export function canSendComposer({customerEmail, message, subject}) {
-  return Boolean(customerEmail && message && subject);
+export function canSendComposer({
+  customerEmail,
+  emailType,
+  loadingOrder,
+  loadingProduct,
+  productTitle,
+  shipDate,
+  sku,
+  subject,
+}) {
+  if (!customerEmail || !subject || loadingOrder || loadingProduct) {
+    return false;
+  }
+
+  if (emailType === "backorder_notice") {
+    return Boolean(sku && shipDate && productTitle);
+  }
+
+  return true;
 }
 
-function buildSubject({emailType, orderNumber, shopName}) {
+function buildSubject({emailType, orderNumber}) {
   if (emailType === "will_call_ready") {
     return `Pick Up on Location Order ${orderNumber || "#"}`.trim();
   }
 
-  return `Message from ${shopName || "{{ shop.name }}"}`.trim();
-}
-
-function buildMessage({emailType, orderNumber, sku}) {
-  if (emailType === "will_call_ready") {
-    return [
-      `Hello,`,
-      `Your order has been processed. We will contact you once your complete order is here and ready for pick up at our Will Call.`,
-      `Thank You.`,
-    ].join("\n");
-  }
-
-  return [
-    `<center><b>${sku || "SKU"}</b></center>`,
-    ``,
-    `Based upon information from the manufacturer, the current ship date of your part(s) is: <b>ETA</b>`,
-    ``,
-    `OPTIONS:`,
-    ``,
-    `HANG TIGHT: If you are okay to wait, you are good to go! Once we have tracking, or any other updates we will forward them to this same email address.`,
-    ``,
-    `CHECK OPTIONS: If you would like to have one of our sales technicians look into another comparable option, which is on the shelf, ready to ship, we can help. The fastest way to check options is a phone call. Otherwise, feel free to respond to this e-mail and we will have someone get in contact with you within 1-2 business days. Keep in mind, some of the items we sell may not have another similar option. If that is the case, we will let you know.`,
-    ``,
-    `CANCEL: This is obviously our least favorite option; however, we totally understand. If the backorder timeline is too long, we have no problem cancelling and refunding the backordered item(s). Just let us know and we will make it happen. Refunds typically take 2-3 business days to hit your account.`,
-    ``,
-    `QUESTIONS? If you have questions on anything, please feel free to respond to this e-mail. You can also reach us by phone or Chat through the website, M-F 6AM-6PM PST.`,
-  ].join("\n");
+  return `Backorder status for order ${orderNumber || "#"}`.trim();
 }
 
 function getLaunchUrl(launchUrl) {
