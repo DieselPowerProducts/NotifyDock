@@ -19,12 +19,12 @@ export async function loader({request}) {
 
   try {
     let warning = "";
-    let history = await listEmailHistory({
+    let historyResult = await listEmailHistory({
       orderId,
       shop: session.shop,
     });
 
-    if (!history.length && customerEmail && orderNumber) {
+    if (!historyResult.history.length && customerEmail && orderNumber) {
       try {
         await backfillEmailHistoryFromKlaviyo({
           customerEmail,
@@ -32,7 +32,7 @@ export async function loader({request}) {
           orderNumber,
           shop: session.shop,
         });
-        history = await listEmailHistory({
+        historyResult = await listEmailHistory({
           orderId,
           shop: session.shop,
         });
@@ -44,7 +44,8 @@ export async function loader({request}) {
 
     return cors(
       json({
-        history: history.map(serializeEmailHistory),
+        hasMore: historyResult.hasMore,
+        history: historyResult.history.map(serializeEmailHistory),
         warning,
       }),
     );

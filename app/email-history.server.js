@@ -10,8 +10,7 @@ const MAX_VISIBLE_HISTORY_ITEMS = 8;
 
 export async function listEmailHistory({orderId, shop}) {
   const historyModel = getHistoryModel();
-
-  return historyModel.findMany({
+  const history = await historyModel.findMany({
     where: {
       orderId,
       shop,
@@ -19,8 +18,13 @@ export async function listEmailHistory({orderId, shop}) {
     orderBy: {
       sentAt: "desc",
     },
-    take: MAX_VISIBLE_HISTORY_ITEMS,
+    take: MAX_VISIBLE_HISTORY_ITEMS + 1,
   });
+
+  return {
+    hasMore: history.length > MAX_VISIBLE_HISTORY_ITEMS,
+    history: history.slice(0, MAX_VISIBLE_HISTORY_ITEMS),
+  };
 }
 
 export async function getEmailHistoryById({id, shop}) {

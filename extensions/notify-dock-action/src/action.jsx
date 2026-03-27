@@ -38,6 +38,7 @@ function ActionComposer() {
     fromOptionsLoading,
     handleSend,
     history,
+    historyHasMore,
     historyExpanded,
     historyLoading,
     historyNotice,
@@ -182,8 +183,8 @@ function ActionComposer() {
                 variant="secondary"
               >
                 {historyExpanded
-                  ? `Hide history (${history.length})`
-                  : `View history (${history.length})`}
+                  ? `Hide history (${formatHistoryCount(history.length, historyHasMore)})`
+                  : `View history (${formatHistoryCount(history.length, historyHasMore)})`}
               </Button>
             </InlineStack>
 
@@ -558,6 +559,14 @@ function labelEmailType(emailType) {
 
 function buildHistorySummary(entry) {
   return `${labelEmailType(entry.emailType)} Sent | ${formatHistoryTimestamp(entry.sentAt)} - To: ${entry.customerEmail}`;
+}
+
+function formatHistoryCount(count, hasMore) {
+  if (hasMore && count >= 8) {
+    return "8+";
+  }
+
+  return `${count}`;
 }
 
 function formatHistoryTimestamp(sentAt) {

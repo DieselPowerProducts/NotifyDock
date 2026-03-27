@@ -58,6 +58,7 @@ export function useComposerState(target) {
   );
   const [subjectDirty, setSubjectDirty] = useState(false);
   const [history, setHistory] = useState([]);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(
     shouldShowHistoryOnLaunch,
   );
@@ -85,6 +86,7 @@ export function useComposerState(target) {
     setFromOptionsNotice("");
     setSubjectDirty(false);
     setHistory([]);
+    setHistoryHasMore(false);
     setHistoryExpanded(shouldShowHistoryOnLaunch);
     setHistoryLoading(false);
     setHistoryNotice("");
@@ -352,10 +354,12 @@ export function useComposerState(target) {
         }
 
         setHistory(Array.isArray(payload.history) ? payload.history : []);
+        setHistoryHasMore(Boolean(payload.hasMore));
         setHistoryNotice(`${payload.warning || ""}`.trim());
       } catch (historyError) {
         if (!cancelled) {
           setHistory([]);
+          setHistoryHasMore(false);
           setHistoryNotice(
             historyError instanceof Error
               ? historyError.message
@@ -464,6 +468,7 @@ export function useComposerState(target) {
     fromOptionsNotice,
     handleSend,
     history,
+    historyHasMore,
     historyExpanded,
     historyLoading,
     historyNotice,
