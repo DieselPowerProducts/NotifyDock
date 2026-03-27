@@ -3,9 +3,9 @@ import {useApi} from "@shopify/ui-extensions-react/admin";
 
 export const EMAIL_TYPES = [
   {label: "Shipping Delay", value: "shipping_delay"},
+  {label: "Will Call - In Progress", value: "will_call_in_progress"},
   {label: "Will Call - Partially Ready", value: "will_call_partially_ready"},
   {label: "Will Call - Ready", value: "will_call_ready"},
-  {label: "Will Call - In Progress", value: "will_call_in_progress"},
 ];
 
 const DEFAULT_EMAIL_TYPE = "shipping_delay";

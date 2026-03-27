@@ -11,8 +11,7 @@ const TEMPLATE_IDS = {
     process.env.KLAVIYO_SHIPPING_DELAY_TEMPLATE_ID || "RsmiyA",
   will_call_partially_ready:
     process.env.KLAVIYO_WILL_CALL_PARTIALLY_READY_TEMPLATE_ID ||
-    process.env.KLAVIYO_WILL_CALL_READY_TEMPLATE_ID ||
-    "XfMenz",
+    "TpanmX",
   will_call_in_progress:
     process.env.KLAVIYO_WILL_CALL_IN_PROGRESS_TEMPLATE_ID || "RV7A6w",
   will_call_ready:
