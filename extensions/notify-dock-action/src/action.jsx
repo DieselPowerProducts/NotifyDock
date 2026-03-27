@@ -75,7 +75,7 @@ function ActionComposer() {
   });
   const selectedHistoryEntry =
     history.find((entry) => entry.id === selectedHistoryId) || null;
-  const previewProducts = buildPreviewProducts(products, sku);
+  const previewProducts = buildPreviewProducts(emailType, products, sku);
   const [renderedPreviewError, setRenderedPreviewError] = useState("");
   const [renderedPreviewLoading, setRenderedPreviewLoading] = useState(false);
   const [renderedPreviewHref, setRenderedPreviewHref] = useState("");
@@ -270,6 +270,7 @@ function ActionComposer() {
 
           <Box inlineSize="48%">
             <TextField
+              disabled={!showsSku(emailType)}
               label="SKU"
               value={sku}
               onChange={setSku}
@@ -277,11 +278,11 @@ function ActionComposer() {
           </Box>
         </InlineStack>
 
-        {loadingProduct ? (
+        {showsSku(emailType) && loadingProduct ? (
           <ProgressIndicator size="small" accessibilityLabel="Loading product preview" />
         ) : null}
 
-        {lookupError ? <Banner tone="warning">{lookupError}</Banner> : null}
+        {showsSku(emailType) && lookupError ? <Banner tone="warning">{lookupError}</Banner> : null}
 
         {renderedPreviewError ? (
           <Banner tone="warning">{renderedPreviewError}</Banner>
@@ -582,7 +583,11 @@ function buildProductVariantTitle(product) {
   return product.productVariantTitle;
 }
 
-function buildPreviewProducts(products, sku) {
+function buildPreviewProducts(emailType, products, sku) {
+  if (!showsSku(emailType)) {
+    return [];
+  }
+
   if (products.length) {
     return products;
   }
@@ -615,6 +620,13 @@ function splitSkuInput(value) {
 
 function showsShipDate(emailType) {
   return emailType === "backorder_notice" || emailType === "shipping_delay";
+}
+
+function showsSku(emailType) {
+  return ![
+    "will_call_ready",
+    "will_call_in_progress",
+  ].includes(emailType);
 }
 
 function formatEmailPreview(message) {
@@ -656,9 +668,9 @@ function buildRenderedPreviewPayload({
     emailType: emailType || "",
     firstName: firstName || "",
     orderNumber: orderNumber || "",
-    products: products || [],
+    products: showsSku(emailType) ? products || [] : [],
     shipDate: shipDate || "",
-    sku: sku || "",
+    sku: showsSku(emailType) ? sku || "" : "",
   };
 }
 

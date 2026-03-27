@@ -11,6 +11,11 @@ export function buildNotifyDockMessage({
   const productMarkup = buildProductMarkup(resolvedProducts);
   const resolvedShipDate = formatNotifyDockShipDate(shipDate);
   const itemLabel = resolvedProducts.length === 1 ? "item" : "items";
+  const referenceMarkup = buildReferenceMarkup({
+    itemLabel,
+    productMarkup,
+    products: resolvedProducts,
+  });
 
   if (emailType === "will_call_partially_ready") {
     return [
@@ -28,8 +33,7 @@ export function buildNotifyDockMessage({
       `<p><strong>Pick Up on Location Order ${escapeHtml(orderNumber || "#")}</strong></p>`,
       `<p>Hello ${escapeHtml(firstName || "there")},</p>`,
       "<p>Your order has been processed. We will contact you once your complete order is here and ready for pickup at Will Call.</p>",
-      `<p><strong>Reference ${itemLabel}:</strong></p>`,
-      productMarkup,
+      referenceMarkup,
       "<p>Thank you.</p>",
     ].join("");
   }
@@ -38,8 +42,7 @@ export function buildNotifyDockMessage({
     return [
       `<p>Hello ${escapeHtml(firstName || "there")},</p>`,
       "<p>Your order has been processed. We will contact you once your complete order is here and ready for pickup at Will Call.</p>",
-      `<p><strong>Reference ${itemLabel}:</strong></p>`,
-      productMarkup,
+      referenceMarkup,
       "<p>Thank you.</p>",
     ].join("");
   }
@@ -82,6 +85,17 @@ function buildProductMarkup(products) {
       return `<p><strong>${escapeHtml(productLabel || "Product")} (${escapeHtml(product.sku || "SKU")})</strong></p>`;
     })
     .join("");
+}
+
+function buildReferenceMarkup({itemLabel, productMarkup, products}) {
+  if (!products.length) {
+    return "";
+  }
+
+  return [
+    `<p><strong>Reference ${itemLabel}:</strong></p>`,
+    productMarkup,
+  ].join("");
 }
 
 function buildProductLabel(productTitle, productVariantTitle) {

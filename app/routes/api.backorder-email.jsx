@@ -54,15 +54,18 @@ export async function action({request}) {
     },
     rawProducts: payload?.products,
   });
-  const primaryProduct = products[0] || null;
   const requestedSkus = splitSkuInput(sku);
-  const resolvedSkuValue =
-    products.map((product) => product.sku).filter(Boolean).join(", ") || sku;
+  const skuRequired = requiresSku(emailType);
+  const resolvedProducts = skuRequired ? products : [];
+  const primaryProduct = resolvedProducts[0] || null;
+  const resolvedSkuValue = skuRequired
+    ? resolvedProducts.map((product) => product.sku).filter(Boolean).join(", ") || sku
+    : "";
   const message = buildNotifyDockMessage({
     emailType,
     firstName,
     orderNumber,
-    products,
+    products: resolvedProducts,
     shipDate,
   }).trim();
   const renderPayload = {
@@ -70,7 +73,7 @@ export async function action({request}) {
     emailType,
     firstName,
     orderNumber,
-    products,
+    products: resolvedProducts,
     shipDate,
     sku: resolvedSkuValue,
   };
@@ -83,18 +86,20 @@ export async function action({request}) {
     !customerEmail ||
     !orderId ||
     !orderNumber ||
-    !requestedSkus.length ||
-    !products.length ||
-    products.length !== requestedSkus.length ||
-    !primaryProduct?.productTitle ||
     !subject ||
-    !isPayloadAllowed({emailType, shipDate})
+    !isPayloadAllowed({
+      emailType,
+      primaryProduct,
+      products: resolvedProducts,
+      requestedSkus,
+      shipDate,
+    })
   ) {
     return cors(
       json(
         {
           error:
-            "Order, customer email, order number, and subject are required. Every comma-separated SKU must resolve to a product title. Ship date is required for this email type.",
+            "Order, customer email, order number, and subject are required. Ship date is required for shipping-delay emails, and every comma-separated SKU must resolve to a product title for email types that use SKU.",
         },
         {status: 400},
       ),
@@ -114,7 +119,7 @@ export async function action({request}) {
       productImageUrl: primaryProduct?.productImageUrl || "",
       productTitle: primaryProduct?.productTitle || "",
       productVariantTitle: primaryProduct?.productVariantTitle || "",
-      products,
+      products: resolvedProducts,
       sentByEmail: session.email || "",
       shipDate,
       shop: shopName || session.shop,
@@ -202,12 +207,38 @@ function buildSubject({emailType, orderNumber}) {
   return `Backorder status for order ${orderNumber}`.trim();
 }
 
-function isPayloadAllowed({emailType, shipDate}) {
-  if (emailType === "backorder_notice" || emailType === "shipping_delay") {
-    return Boolean(shipDate);
+function requiresSku(emailType) {
+  return ![
+    "will_call_ready",
+    "will_call_in_progress",
+  ].includes(emailType);
+}
+
+function isPayloadAllowed({
+  emailType,
+  primaryProduct,
+  products,
+  requestedSkus,
+  shipDate,
+}) {
+  if (requiresShipDate(emailType) && !shipDate) {
+    return false;
   }
 
-  return true;
+  if (!requiresSku(emailType)) {
+    return true;
+  }
+
+  return (
+    requestedSkus.length > 0 &&
+    products.length > 0 &&
+    products.length === requestedSkus.length &&
+    Boolean(primaryProduct?.productTitle)
+  );
+}
+
+function requiresShipDate(emailType) {
+  return emailType === "backorder_notice" || emailType === "shipping_delay";
 }
 
 function splitSkuInput(value) {

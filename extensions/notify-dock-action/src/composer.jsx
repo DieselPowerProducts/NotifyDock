@@ -246,6 +246,13 @@ export function useComposerState(target) {
   }, [emailType, orderNumber, shopName, subjectDirty]);
 
   useEffect(() => {
+    if (!requiresSku(emailType)) {
+      setLoadingProduct(false);
+      setLookupError("");
+      setProducts([]);
+      return;
+    }
+
     const requestedSkus = splitSkuInput(sku);
 
     if (!requestedSkus.length) {
@@ -305,7 +312,7 @@ export function useComposerState(target) {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [sku]);
+  }, [emailType, sku]);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,7 +393,11 @@ export function useComposerState(target) {
   }
 
   async function handleSend() {
-    const primaryProduct = products[0] || null;
+    const selectedProducts = requiresSku(emailType) ? products : [];
+    const primaryProduct = selectedProducts[0] || null;
+    const resolvedSku = requiresSku(emailType)
+      ? selectedProducts.map((product) => product.sku).filter(Boolean).join(", ") || sku
+      : "";
 
     setSending(true);
     setStatus(null);
@@ -408,10 +419,10 @@ export function useComposerState(target) {
           product_image_url: primaryProduct?.productImageUrl || "",
           product_title: primaryProduct?.productTitle || "",
           product_variant_title: primaryProduct?.productVariantTitle || "",
-          products: products.map((product) => serializeProductPayload(product)),
+          products: selectedProducts.map((product) => serializeProductPayload(product)),
           ship_date: shipDate,
           shop_name: shopName,
-          sku: products.map((product) => product.sku).filter(Boolean).join(", ") || sku,
+          sku: resolvedSku,
           subject,
         }),
       });
@@ -506,26 +517,30 @@ export function canSendComposer({
   subject,
 }) {
   const requestedSkus = splitSkuInput(sku);
+  const skuRequired = requiresSku(emailType);
 
   if (
     !customerEmail ||
     !fromAddress ||
     !subject ||
-    !requestedSkus.length ||
-    !products.length ||
     loadingOrder ||
-    loadingProduct ||
-    Boolean(lookupError)
+    (skuRequired && (loadingProduct || Boolean(lookupError)))
   ) {
     return false;
   }
 
-  if (products.length !== requestedSkus.length) {
-    return false;
-  }
+  if (skuRequired) {
+    if (!requestedSkus.length || !products.length) {
+      return false;
+    }
 
-  if (products.some((product) => !product.productTitle)) {
-    return false;
+    if (products.length !== requestedSkus.length) {
+      return false;
+    }
+
+    if (products.some((product) => !product.productTitle)) {
+      return false;
+    }
   }
 
   if (requiresShipDate(emailType)) {
@@ -569,6 +584,13 @@ function selectPreferredFromAddress({currentValue, options}) {
 
 function requiresShipDate(emailType) {
   return emailType === "backorder_notice" || emailType === "shipping_delay";
+}
+
+function requiresSku(emailType) {
+  return ![
+    "will_call_ready",
+    "will_call_in_progress",
+  ].includes(emailType);
 }
 
 function getLaunchUrl(launchUrl) {
