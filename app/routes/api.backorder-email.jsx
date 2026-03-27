@@ -7,6 +7,7 @@ import {authenticate} from "../shopify.server";
 const VALID_EMAIL_TYPES = new Set([
   "backorder_notice",
   "shipping_delay",
+  "will_call_partially_ready",
   "will_call_in_progress",
   "will_call_ready",
 ]);
@@ -182,6 +183,10 @@ export async function action({request}) {
 }
 
 function buildSubject({emailType, orderNumber}) {
+  if (emailType === "will_call_partially_ready") {
+    return "Partial Will Call Order is Ready";
+  }
+
   if (emailType === "will_call_ready") {
     return `Pick Up on Location Order ${orderNumber}`.trim();
   }

@@ -3,6 +3,7 @@ import {useApi} from "@shopify/ui-extensions-react/admin";
 
 export const EMAIL_TYPES = [
   {label: "Shipping Delay", value: "shipping_delay"},
+  {label: "Will Call - Partially Ready", value: "will_call_partially_ready"},
   {label: "Will Call - Ready", value: "will_call_ready"},
   {label: "Will Call - In Progress", value: "will_call_in_progress"},
 ];
@@ -535,6 +536,10 @@ export function canSendComposer({
 }
 
 function buildSubject({emailType, orderNumber, shopName}) {
+  if (emailType === "will_call_partially_ready") {
+    return "Partial Will Call Order is Ready";
+  }
+
   if (emailType === "will_call_ready") {
     return `Pick Up on Location Order ${orderNumber || "#"}`.trim();
   }

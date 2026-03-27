@@ -9,6 +9,10 @@ const TEMPLATE_IDS = {
     process.env.KLAVIYO_BACKORDER_TEMPLATE_ID || "TGEPX6",
   shipping_delay:
     process.env.KLAVIYO_SHIPPING_DELAY_TEMPLATE_ID || "RsmiyA",
+  will_call_partially_ready:
+    process.env.KLAVIYO_WILL_CALL_PARTIALLY_READY_TEMPLATE_ID ||
+    process.env.KLAVIYO_WILL_CALL_READY_TEMPLATE_ID ||
+    "XfMenz",
   will_call_in_progress:
     process.env.KLAVIYO_WILL_CALL_IN_PROGRESS_TEMPLATE_ID || "RV7A6w",
   will_call_ready:
@@ -22,6 +26,9 @@ export const METRIC_NAMES = {
   shipping_delay:
     process.env.KLAVIYO_SHIPPING_DELAY_METRIC_NAME ||
     "Notify Dock Shipping Delay Email Requested",
+  will_call_partially_ready:
+    process.env.KLAVIYO_WILL_CALL_PARTIALLY_READY_METRIC_NAME ||
+    "Notify Dock Will Call Partially Ready Email Requested",
   will_call_in_progress:
     process.env.KLAVIYO_WILL_CALL_IN_PROGRESS_METRIC_NAME ||
     "Notify Dock Will Call In Progress Email Requested",

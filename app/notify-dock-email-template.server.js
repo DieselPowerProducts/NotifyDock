@@ -12,6 +12,17 @@ export function buildNotifyDockMessage({
   const resolvedShipDate = formatNotifyDockShipDate(shipDate);
   const itemLabel = resolvedProducts.length === 1 ? "item" : "items";
 
+  if (emailType === "will_call_partially_ready") {
+    return [
+      "<p><strong>Partial Will Call Order is Ready</strong></p>",
+      `<p>Hello ${escapeHtml(firstName || "there")},</p>`,
+      `<p>The following ${itemLabel} from your order ${escapeHtml(orderNumber || "#")} ${resolvedProducts.length === 1 ? "is" : "are"} ready for pickup at Will Call:</p>`,
+      productMarkup,
+      "<p>We will contact you again when the remaining items are ready.</p>",
+      "<p>Thank you.</p>",
+    ].join("");
+  }
+
   if (emailType === "will_call_ready") {
     return [
       `<p><strong>Pick Up on Location Order ${escapeHtml(orderNumber || "#")}</strong></p>`,

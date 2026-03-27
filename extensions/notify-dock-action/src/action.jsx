@@ -536,6 +536,10 @@ function EmailPreviewContent({entry}) {
 }
 
 function labelEmailType(emailType) {
+  if (emailType === "will_call_partially_ready") {
+    return "Will Call - Partially Ready";
+  }
+
   if (emailType === "will_call_in_progress") {
     return "Will Call - In Progress";
   }

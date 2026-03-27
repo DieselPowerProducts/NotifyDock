@@ -180,6 +180,10 @@ function buildHistoryUpsertData({
 }
 
 function buildFallbackSubject({emailType, orderNumber}) {
+  if (emailType === "will_call_partially_ready") {
+    return "Partial Will Call Order is Ready";
+  }
+
   if (emailType === "will_call_ready") {
     return `Pick Up on Location Order ${orderNumber}`.trim();
   }
