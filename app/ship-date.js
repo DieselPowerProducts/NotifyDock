@@ -9,7 +9,7 @@ export function formatNotifyDockShipDate(value) {
     return `${value}`.trim();
   }
 
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "long",
     timeZone: "UTC",
