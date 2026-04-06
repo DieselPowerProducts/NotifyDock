@@ -10,6 +10,7 @@ import {
   Divider,
   Image,
   InlineStack,
+  Pressable,
   ProgressIndicator,
   Select,
   Text,
@@ -337,9 +338,17 @@ function ActionComposer() {
         {showsSku(emailType) && orderSkuReferences.length ? (
           <InlineStack gap="small" inlineAlignment="start">
             {orderSkuReferences.map(({quantity, sku: referenceSku}) => (
-              <Badge key={referenceSku}>
-                {quantity > 1 ? `${referenceSku} x${quantity}` : referenceSku}
-              </Badge>
+              <Pressable
+                key={referenceSku}
+                accessibilityLabel={`Add SKU ${referenceSku}`}
+                onPress={() => {
+                  setSku(appendSkuValue(sku, referenceSku));
+                }}
+              >
+                <Badge>
+                  {quantity > 1 ? `${referenceSku} x${quantity}` : referenceSku}
+                </Badge>
+              </Pressable>
             ))}
           </InlineStack>
         ) : null}
@@ -605,10 +614,10 @@ function ProductPreviewList({
             <BlockStack gap="small">
               <InlineStack blockAlignment="start" gap="small" inlineAlignment="start">
                 <Box
-                  blockSize={64}
-                  inlineSize={64}
-                  maxInlineSize={64}
-                  minInlineSize={64}
+                  blockSize={50}
+                  inlineSize={50}
+                  maxInlineSize={50}
+                  minInlineSize={50}
                 >
                   {product.productImageUrl ? (
                     <Image
@@ -618,7 +627,7 @@ function ProductPreviewList({
                       }
                     />
                   ) : (
-                    <Box blockSize={64} inlineSize={64} padding="small">
+                    <Box blockSize={50} inlineSize={50} padding="small">
                       <Text>No image</Text>
                     </Box>
                   )}
@@ -836,6 +845,22 @@ function splitSkuInput(value) {
         .filter(Boolean),
     ),
   );
+}
+
+function appendSkuValue(currentValue, nextSku) {
+  const normalizedNextSku = `${nextSku || ""}`.trim();
+
+  if (!normalizedNextSku) {
+    return `${currentValue || ""}`;
+  }
+
+  const requestedSkus = splitSkuInput(currentValue);
+
+  if (requestedSkus.includes(normalizedNextSku)) {
+    return requestedSkus.join(", ");
+  }
+
+  return [...requestedSkus, normalizedNextSku].join(", ");
 }
 
 function showsShipDate(emailType) {
