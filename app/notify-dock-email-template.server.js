@@ -57,7 +57,6 @@ export function buildNotifyDockMessage({
       `<p>The below product${resolvedProducts.length === 1 ? " is" : "s are"} currently on backorder:</p>`,
       productMarkup,
       `<p>Based upon information from the manufacturer, the current ship date is: <strong>${escapeHtml(resolvedShipDate || "Insert Ship date")}</strong></p>`,
-      buildShippingDelayClosingMarkup(),
     ].join("");
   }
 
@@ -82,7 +81,6 @@ export function buildNotifyDockMessage({
   return [
     productMarkup,
     `<p>Based upon information from the manufacturer, the current ship date of your part(s) is: <strong>${escapeHtml(resolvedShipDate || "Insert Ship date")}</strong></p>`,
-    buildShippingDelayClosingMarkup(),
   ].join("");
 }
 
@@ -118,15 +116,6 @@ export function buildDynamicShippingDelayDetailsHtml({
       ].join("");
     })
     .join("");
-}
-
-function buildShippingDelayClosingMarkup() {
-  return [
-    "<p><strong>HANG TIGHT:</strong> If you are okay to wait, you are good to go. Once we have tracking, or any other updates, we will forward them to this same email address.</p>",
-    "<p><strong>CHECK OPTIONS:</strong> If you would like a comparable option that is on the shelf and ready to ship, our sales technicians can help.</p>",
-    "<p><strong>CANCEL:</strong> If the backorder timeline is too long, we can cancel and refund the backordered item(s).</p>",
-    "<p><strong>QUESTIONS:</strong> Reply to this email or reach out by phone or website chat, Monday through Friday from 6AM to 6PM Pacific.</p>",
-  ].join("");
 }
 
 function buildDynamicDelayStatusText({delayDate, delayState}) {
