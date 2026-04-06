@@ -12,8 +12,7 @@ const TEMPLATE_IDS = {
     process.env.KLAVIYO_BACKORDER_TEMPLATE_ID || "TGEPX6",
   dynamic_shipping_delay:
     process.env.KLAVIYO_DYNAMIC_SHIPPING_DELAY_TEMPLATE_ID ||
-    process.env.KLAVIYO_SHIPPING_DELAY_TEMPLATE_ID ||
-    "RsmiyA",
+    "Yd57mF",
   shipping_delay:
     process.env.KLAVIYO_SHIPPING_DELAY_TEMPLATE_ID || "RsmiyA",
   will_call_partially_ready:
