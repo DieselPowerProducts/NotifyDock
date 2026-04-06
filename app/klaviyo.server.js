@@ -1,4 +1,5 @@
 import {
+  buildNotifyDockMessage,
   buildDynamicShippingDelayDetailsHtml,
 } from "./notify-dock-email-template.server";
 import {formatNotifyDockShipDate} from "./ship-date";
@@ -242,6 +243,14 @@ export async function renderNotifyDockTemplate({
           products: normalizedProducts,
         })
       : "";
+  const messageHtml = buildNotifyDockMessage({
+    emailType,
+    firstName,
+    globalShipDate: formattedGlobalShipDate,
+    orderNumber,
+    products: normalizedProducts,
+    shipDate: formattedShipDate,
+  });
 
   if (!templateId) {
     const error = new Error(
@@ -274,6 +283,7 @@ export async function renderNotifyDockTemplate({
               })),
               global_ship_date: formattedGlobalShipDate,
               delay_details_html: delayDetailsHtml,
+              message_html: messageHtml,
               delay_mode:
                 emailType === "dynamic_shipping_delay"
                   ? formattedGlobalShipDate
