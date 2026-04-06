@@ -560,14 +560,15 @@ function ProductPreviewList({
   return (
     <BlockStack gap="base">
       {isDynamicShippingDelay(emailType) && hasResolvedDynamicProducts(products) ? (
-        <Box padding="base">
+        <BlockStack gap="small">
+          <Text>Global Ship Date - Enter if all products share the same date</Text>
           <DateField
             disabled={hasConfiguredPerItemDelay && !dynamicGlobalShipDate}
-            label="Global Ship Date"
+            label=""
             value={dynamicGlobalShipDate}
             onChange={onDynamicGlobalShipDateChange}
           />
-        </Box>
+        </BlockStack>
       ) : null}
 
       {isDynamicShippingDelay(emailType) && hasResolvedDynamicProducts(products) ? (
