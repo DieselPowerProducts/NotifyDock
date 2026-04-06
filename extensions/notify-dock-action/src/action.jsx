@@ -604,14 +604,14 @@ function ProductPreviewList({
       {products.map((product, index) => (
         <BlockStack key={`${product.sku || "sku"}-${index}`} gap="base">
           {showDynamicGlobalSection && index === 0 ? null : <Divider />}
-          <Box padding="base">
-            <BlockStack gap="base">
-              <InlineStack blockAlignment="start" gap="base" inlineAlignment="start">
+          <Box padding="small">
+            <BlockStack gap="small">
+              <InlineStack blockAlignment="start" gap="small" inlineAlignment="start">
                 <Box
-                  blockSize={120}
-                  inlineSize={120}
-                  maxInlineSize={120}
-                  minInlineSize={120}
+                  blockSize={64}
+                  inlineSize={64}
+                  maxInlineSize={64}
+                  minInlineSize={64}
                 >
                   {product.productImageUrl ? (
                     <Image
@@ -621,19 +621,17 @@ function ProductPreviewList({
                       }
                     />
                   ) : (
-                    <Box blockSize={120} inlineSize={120} padding="base">
+                    <Box blockSize={64} inlineSize={64} padding="small">
                       <Text>No image</Text>
                     </Box>
                   )}
                 </Box>
 
-                <Box inlineSize="60%">
+                <Box inlineSize="72%">
                   <BlockStack gap="small">
-                    <Text fontWeight="bold">{buildProductTitle(product)}</Text>
-
-                    {buildProductVariantTitle(product) ? (
-                      <Text>{buildProductVariantTitle(product)}</Text>
-                    ) : null}
+                    <Text fontWeight="bold">
+                      {buildCompactProductTitle(product)}
+                    </Text>
 
                     <Text>SKU: {product.sku || "{{ item.sku }}"}</Text>
                   </BlockStack>
@@ -780,6 +778,10 @@ function buildProductTitle(product) {
   return product?.productTitle || "{{ item.product_title }}";
 }
 
+function buildCompactProductTitle(product) {
+  return truncateText(buildProductTitle(product), 56);
+}
+
 function buildProductVariantTitle(product) {
   if (!product?.productVariantTitle || product.productVariantTitle === "Default Title") {
     return "";
@@ -814,6 +816,16 @@ function buildPreviewProducts(emailType, products, sku) {
     productVariantTitle: "",
     sku: requestedSku,
   }));
+}
+
+function truncateText(value, maxLength) {
+  const normalizedValue = `${value || ""}`.trim();
+
+  if (!normalizedValue || normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 function splitSkuInput(value) {
