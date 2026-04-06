@@ -43,6 +43,7 @@ export function useComposerState(target) {
   const [orderNumber, setOrderNumber] = useState("");
   const [firstName, setFirstName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [orderSkuReferences, setOrderSkuReferences] = useState([]);
   const [sku, setSku] = useState("");
   const [shipDate, setShipDate] = useState("");
   const [products, setProducts] = useState([]);
@@ -75,6 +76,7 @@ export function useComposerState(target) {
     setOrderNumber("");
     setFirstName("");
     setCustomerEmail("");
+    setOrderSkuReferences([]);
     setSku("");
     setShipDate("");
     setProducts([]);
@@ -111,6 +113,12 @@ export function useComposerState(target) {
               id
               name
               email
+              lineItems(first: 100) {
+                nodes {
+                  sku
+                  currentQuantity
+                }
+              }
               customer {
                 firstName
                 lastName
@@ -158,6 +166,7 @@ export function useComposerState(target) {
         setOrderNumber(order.name || "");
         setFirstName(firstName);
         setCustomerEmail(customerEmail);
+        setOrderSkuReferences(buildOrderSkuReferences(order.lineItems?.nodes));
         setLoadingOrder(false);
       } catch (_loadError) {
         if (!cancelled) {
@@ -429,6 +438,7 @@ export function useComposerState(target) {
     lookupError,
     orderId,
     orderNumber,
+    orderSkuReferences,
     products,
     resetComposer,
     selectedHistoryId: launchedHistoryId,
@@ -665,6 +675,30 @@ function buildMissingSkuMessage(missingSkus) {
   }
 
   return `No Shopify product matched SKU${missingSkus.length > 1 ? "s" : ""}: ${missingSkus.join(", ")}.`;
+}
+
+function buildOrderSkuReferences(lineItems) {
+  if (!Array.isArray(lineItems)) {
+    return [];
+  }
+
+  const quantitiesBySku = new Map();
+
+  for (const lineItem of lineItems) {
+    const sku = `${lineItem?.sku || ""}`.trim();
+    const currentQuantity = Number(lineItem?.currentQuantity || 0);
+
+    if (!sku || currentQuantity <= 0) {
+      continue;
+    }
+
+    quantitiesBySku.set(sku, (quantitiesBySku.get(sku) || 0) + currentQuantity);
+  }
+
+  return Array.from(quantitiesBySku.entries()).map(([sku, quantity]) => ({
+    quantity,
+    sku,
+  }));
 }
 
 function isDynamicShippingDelay(emailType) {

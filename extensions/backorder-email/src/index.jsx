@@ -122,7 +122,7 @@ function BlockLauncher() {
     <AdminBlock title="Customer Email Composer">
       <BlockStack gap="base">
         <Text>
-          Open the Composer to Review and Send Backorder, Shipping Delay, or Will-Call email&apos;s.
+          Open the Composer to Review and Send Email Updates to the Customer
         </Text>
 
         <Button
