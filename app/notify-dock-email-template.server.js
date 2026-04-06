@@ -152,15 +152,15 @@ function buildDynamicProductTable({product, statusMarkup = ""}) {
       : "";
 
   return [
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:0 0 16px 0; border:1px solid #d1d5db;">',
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:0 0 16px 0; border:0px;">',
     "<tr>",
-    `<td style="width:120px; padding:16px; vertical-align:top;">${buildDynamicProductImageCell(product)}</td>`,
-    '<td style="padding:16px 16px 16px 0; vertical-align:top;">',
+    `<td style="width:120px; padding: 0px 16px 0px 0px; vertical-align:top;">${buildDynamicProductImageCell(product)}</td>`,
+    '<td style="padding:0; vertical-align:top;">',
     `<p style="margin:0 0 8px 0; color:#111827; font-size:16px; line-height:24px; font-weight:700;">${escapeHtml(productLabel || "Product")}</p>`,
     variantTitle
       ? `<p style="margin:0 0 8px 0; color:#374151; font-size:14px; line-height:20px;">${escapeHtml(variantTitle)}</p>`
       : "",
-    `<p style="margin:0; color:#4b5563; font-size:14px; line-height:20px;">SKU: ${escapeHtml(product.sku || "SKU")}</p>`,
+    `<p style="margin:0; color:#4b5563; font-size:14px; line-height:20px;">${escapeHtml(product.sku || "SKU")}</p>`,
     "</td>",
     "</tr>",
     statusMarkup
@@ -192,7 +192,7 @@ function buildDynamicProductImageCell(product) {
 
 function buildDynamicGlobalDateTable(globalShipDate) {
   return [
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:15px 0 30px 0;">',
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin:0px 0 16px 0;">',
     "<tr>",
     '<td style="padding:0; text-align:center;">',
     '<div style="margin:15px 0 30px 0;padding:0px;width:80%;text-align:center;margin:0 auto;">',
