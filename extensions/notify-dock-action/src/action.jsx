@@ -5,6 +5,7 @@ import {
   BlockStack,
   Box,
   Button,
+  Checkbox,
   DateField,
   Divider,
   Image,
@@ -370,6 +371,14 @@ function ActionComposer() {
                   }),
                 );
               }}
+              onDynamicDelayStateChange={(sku, value) => {
+                setDynamicDelayDetails((current) =>
+                  updateDynamicDelayDetail(current, sku, {
+                    delayDate: "",
+                    delayState: value ? "business_days_12_15" : "",
+                  }),
+                );
+              }}
               onDynamicGlobalShipDateChange={(value) => {
                 setDynamicGlobalShipDate(value);
               }}
@@ -561,6 +570,7 @@ function ProductPreviewList({
   dynamicGlobalShipDate,
   emailType,
   onDynamicDelayDateChange,
+  onDynamicDelayStateChange,
   onDynamicGlobalShipDateChange,
   products,
 }) {
@@ -638,6 +648,9 @@ function ProductPreviewList({
                   onDelayDateChange={(value) => {
                     onDynamicDelayDateChange(product.sku, value);
                   }}
+                  onDelayStateChange={(value) => {
+                    onDynamicDelayStateChange(product.sku, value);
+                  }}
                 />
               ) : null}
             </BlockStack>
@@ -655,15 +668,18 @@ function DynamicDelayEditor({
   disabled,
   sku,
   onDelayDateChange,
+  onDelayStateChange,
 }) {
   const fieldId = `dynamic-delay-date-${sanitizeFieldToken(sku)}`;
   const fieldName = `${fieldId}-input`;
+  const businessDaysCheckboxId = `${fieldId}-business-days`;
+  const usesBusinessDaysDelay = detail.delayState === "business_days_12_15";
 
   return (
     <InlineStack blockAlignment="center" gap="base" inlineAlignment="start">
-      <Box inlineSize="32%">
+      <Box inlineSize={150} maxInlineSize={150} minInlineSize={150}>
         <DateField
-          disabled={disabled}
+          disabled={disabled || usesBusinessDaysDelay}
           id={fieldId}
           label=""
           name={fieldName}
@@ -674,6 +690,14 @@ function DynamicDelayEditor({
       </Box>
 
       <Text>Item Specific Date</Text>
+
+      <Checkbox
+        checked={usesBusinessDaysDelay}
+        disabled={disabled}
+        id={businessDaysCheckboxId}
+        label="Built to Order 12-15 Day Delay"
+        onChange={onDelayStateChange}
+      />
     </InlineStack>
   );
 }
@@ -962,6 +986,10 @@ function isDynamicShippingDelayReady({
 
   return dynamicDelayDetails.length === products.length &&
     dynamicDelayDetails.every((detail) => {
+      if (`${detail?.delayState || ""}`.trim() === "business_days_12_15") {
+        return true;
+      }
+
       return Boolean(`${detail?.delayDate || ""}`.trim());
     });
 }
