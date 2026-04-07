@@ -724,15 +724,16 @@ function DynamicDelaySummary({
 
   return (
     <InlineStack blockAlignment="center" gap="small" inlineAlignment="start">
-      <Button
-        disabled={disabled}
-        onPress={onEdit}
-        variant="secondary"
+      <Pressable
+        accessibilityLabel={buildDynamicDelaySummaryLabel(detail)}
+        onPress={disabled ? undefined : onEdit}
       >
-        {buildDynamicDelaySummaryLabel(detail)}
-      </Button>
+        <Badge size="small-100">
+          {buildDynamicDelaySummaryLabel(detail)}
+        </Badge>
+      </Pressable>
 
-      <Text>{buildDynamicDelaySummaryText(detail)}</Text>
+      <Box inlineSize={100} minInlineSize={100} />
 
       <Checkbox
         checked={usesBusinessDaysDelay}
@@ -770,10 +771,6 @@ function buildDynamicDelaySummaryLabel(detail) {
   }
 
   return "Set Item Date";
-}
-
-function buildDynamicDelaySummaryText(detail) {
-  return "Item Specific Date";
 }
 
 function sanitizeFieldToken(value) {
