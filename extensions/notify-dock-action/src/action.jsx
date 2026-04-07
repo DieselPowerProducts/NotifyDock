@@ -1085,14 +1085,7 @@ function isDynamicShippingDelayReady({
     return true;
   }
 
-  return dynamicDelayDetails.length === products.length &&
-    dynamicDelayDetails.every((detail) => {
-      if (`${detail?.delayState || ""}`.trim() === "business_days_12_15") {
-        return true;
-      }
-
-      return Boolean(`${detail?.delayDate || ""}`.trim());
-    });
+  return dynamicDelayDetails.length === products.length;
 }
 
 async function requestPreviewHref(payload) {
