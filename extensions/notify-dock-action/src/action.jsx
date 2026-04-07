@@ -798,7 +798,7 @@ function DynamicDelayEditorCard({
           : "Select item ship date"}
       </Text>
 
-      <Box inlineSize={210} maxInlineSize={210} minInlineSize={210}>
+      <Box inlineSize="100%" maxInlineSize="100%" minInlineSize="100%">
         <DatePicker
           selected={
             mode === BUILT_TO_ORDER_EDITOR_MODE
