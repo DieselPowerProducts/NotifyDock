@@ -104,7 +104,7 @@ export async function action({request}) {
       json(
         {
           error:
-            "Order, customer email, order number, and subject are required. Ship date is required for legacy shipping-delay emails, and every comma-separated SKU must resolve to a product title. Dynamic Shipping Delay also requires either one global date or valid resolved SKUs.",
+            "Order, customer email, order number, and subject are required. Ship date is required for legacy shipping-delay emails, and every comma-separated SKU must resolve to a product title. Shipping Delay also requires either one global date or valid resolved SKUs.",
         },
         {status: 400},
       ),

@@ -4,7 +4,7 @@ import {useApi} from "@shopify/ui-extensions-react/admin";
 export const DYNAMIC_SHIPPING_DELAY_EMAIL_TYPE = "dynamic_shipping_delay";
 
 export const EMAIL_TYPES = [
-  {label: "Dynamic Shipping Delay", value: DYNAMIC_SHIPPING_DELAY_EMAIL_TYPE},
+  {label: "Shipping Delay", value: DYNAMIC_SHIPPING_DELAY_EMAIL_TYPE},
   {label: "Will Call - In Progress", value: "will_call_in_progress"},
   {label: "Will Call - Partially Ready", value: "will_call_partially_ready"},
   {label: "Will Call - Ready", value: "will_call_ready"},

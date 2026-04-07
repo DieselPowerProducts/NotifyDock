@@ -818,7 +818,7 @@ function labelEmailType(emailType) {
   }
 
   if (emailType === DYNAMIC_SHIPPING_DELAY_EMAIL_TYPE) {
-    return "Dynamic Shipping Delay";
+    return "Shipping Delay";
   }
 
   return "Backorder Notice";
