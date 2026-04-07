@@ -593,7 +593,6 @@ function ProductPreviewList({
     isDynamicShippingDelay(emailType) && hasResolvedDynamicProducts(products);
   const [activeEditorSku, setActiveEditorSku] = useState("");
   const [draftDelayDate, setDraftDelayDate] = useState("");
-  const [draftDelayState, setDraftDelayState] = useState("");
 
   useEffect(() => {
     if (!activeEditorSku) {
@@ -603,14 +602,12 @@ function ProductPreviewList({
     if (globalDelayActive) {
       setActiveEditorSku("");
       setDraftDelayDate("");
-      setDraftDelayState("");
       return;
     }
 
     if (!products.some((product) => `${product?.sku || ""}`.trim() === activeEditorSku)) {
       setActiveEditorSku("");
       setDraftDelayDate("");
-      setDraftDelayState("");
     }
   }, [activeEditorSku, globalDelayActive, products]);
 
@@ -622,28 +619,11 @@ function ProductPreviewList({
     setDraftDelayDate(
       detail.delayState === "specific_date" ? `${detail.delayDate || ""}`.trim() : "",
     );
-    setDraftDelayState(
-      detail.delayState === "business_days_12_15" ? "business_days_12_15" : "",
-    );
   }
 
   function closeDynamicDelayEditor() {
     setActiveEditorSku("");
     setDraftDelayDate("");
-    setDraftDelayState("");
-  }
-
-  function applyDynamicDelayEditor(sku) {
-    const normalizedDate = `${draftDelayDate || ""}`.trim();
-    const usesBusinessDaysDelay = draftDelayState === "business_days_12_15";
-
-    if (usesBusinessDaysDelay) {
-      onDynamicDelayStateChange(sku, true);
-    } else {
-      onDynamicDelayDateChange(sku, normalizedDate);
-    }
-
-    closeDynamicDelayEditor();
   }
 
   return (
@@ -671,14 +651,11 @@ function ProductPreviewList({
             `${product.sku || ""}`.trim() === activeEditorSku ? (
               <DynamicDelayEditorCard
                 delayDate={draftDelayDate}
-                delayState={draftDelayState}
-                product={product}
-                onApply={() => {
-                  applyDynamicDelayEditor(product.sku);
+                onDelayDateChange={(value) => {
+                  setDraftDelayDate(value);
+                  onDynamicDelayDateChange(product.sku, value);
+                  closeDynamicDelayEditor();
                 }}
-                onCancel={closeDynamicDelayEditor}
-                onDelayDateChange={setDraftDelayDate}
-                onDelayStateChange={setDraftDelayState}
               />
             ) : (
               <BlockStack gap="small">
@@ -718,6 +695,9 @@ function ProductPreviewList({
                   <DynamicDelaySummary
                     detail={dynamicDelayLookup.get(product.sku) || EMPTY_DYNAMIC_DELAY_DETAIL}
                     disabled={globalDelayActive}
+                    onBuiltToOrderChange={(value) => {
+                      onDynamicDelayStateChange(product.sku, value);
+                    }}
                     onEdit={() => {
                       openDynamicDelayEditor(product.sku || `${index}`);
                     }}
@@ -737,8 +717,11 @@ function ProductPreviewList({
 function DynamicDelaySummary({
   detail,
   disabled,
+  onBuiltToOrderChange,
   onEdit,
 }) {
+  const usesBusinessDaysDelay = detail.delayState === "business_days_12_15";
+
   return (
     <InlineStack blockAlignment="center" gap="small" inlineAlignment="start">
       <Button
@@ -750,30 +733,24 @@ function DynamicDelaySummary({
       </Button>
 
       <Text>{buildDynamicDelaySummaryText(detail)}</Text>
+
+      <Checkbox
+        checked={usesBusinessDaysDelay}
+        disabled={disabled}
+        label="Built to Order 12-15 Day Delay"
+        onChange={onBuiltToOrderChange}
+      />
     </InlineStack>
   );
 }
 
 function DynamicDelayEditorCard({
   delayDate,
-  delayState,
-  onApply,
-  onCancel,
   onDelayDateChange,
-  onDelayStateChange,
-  product,
 }) {
-  const usesBusinessDaysDelay = delayState === "business_days_12_15";
-
   return (
-    <BlockStack gap="base">
-      <BlockStack gap="small">
-        <Text fontWeight="bold">{buildCompactProductTitle(product)}</Text>
-        <Text>SKU: {product.sku || "{{ item.sku }}"}</Text>
-      </BlockStack>
-
+    <Box inlineSize={210} maxInlineSize={210} minInlineSize={210}>
       <DatePicker
-        disabled={usesBusinessDaysDelay}
         selected={delayDate || undefined}
         onChange={(value) => {
           if (typeof value !== "string") {
@@ -781,41 +758,13 @@ function DynamicDelayEditorCard({
           }
 
           onDelayDateChange(value);
-          onDelayStateChange("specific_date");
         }}
       />
-
-      <Checkbox
-        checked={usesBusinessDaysDelay}
-        label="Built to Order 12-15 Day Delay"
-        onChange={(value) => {
-          if (value) {
-            onDelayDateChange("");
-            onDelayStateChange("business_days_12_15");
-            return;
-          }
-
-          onDelayStateChange("");
-        }}
-      />
-
-      <InlineStack gap="small" inlineAlignment="start">
-        <Button onPress={onApply} variant="primary">
-          Apply
-        </Button>
-        <Button onPress={onCancel} variant="secondary">
-          Cancel
-        </Button>
-      </InlineStack>
-    </BlockStack>
+    </Box>
   );
 }
 
 function buildDynamicDelaySummaryLabel(detail) {
-  if (detail.delayState === "business_days_12_15") {
-    return "12-15 Day Delay";
-  }
-
   if (`${detail.delayDate || ""}`.trim()) {
     return detail.delayDate;
   }
@@ -824,10 +773,6 @@ function buildDynamicDelaySummaryLabel(detail) {
 }
 
 function buildDynamicDelaySummaryText(detail) {
-  if (detail.delayState === "business_days_12_15") {
-    return "Built to Order";
-  }
-
   return "Item Specific Date";
 }
 
