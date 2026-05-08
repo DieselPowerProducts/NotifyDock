@@ -67,6 +67,14 @@ const EMAIL_TYPE_BY_METRIC_NAME = Object.fromEntries(
   Object.entries(METRIC_NAMES).map(([emailType, metricName]) => [metricName, emailType]),
 );
 
+export const EMAIL_DELIVERY_METRIC_NAMES = {
+  bounced: "Bounced Email",
+  delivered: "Received Email",
+  dropped: "Dropped Email",
+  marked_spam: "Marked Email as Spam",
+  opened: "Opened Email",
+};
+
 export async function sendNotifyDockEvent({
   customerEmail,
   emailType,
@@ -122,6 +130,7 @@ export async function sendNotifyDockEvent({
     throw error;
   }
 
+  const requestEventUniqueId = crypto.randomUUID();
   const body = JSON.stringify({
     data: {
       type: "event",
@@ -135,6 +144,7 @@ export async function sendNotifyDockEvent({
           message_html: message,
           order_id: orderId,
           order_number: orderNumber,
+          notify_dock_send_id: requestEventUniqueId,
           product_image_url: productImageUrl,
           product_title: productTitle,
           product_variant_title: productVariantTitle,
@@ -175,7 +185,7 @@ export async function sendNotifyDockEvent({
             },
           },
         },
-        unique_id: crypto.randomUUID(),
+        unique_id: requestEventUniqueId,
       },
     },
   });
@@ -194,6 +204,7 @@ export async function sendNotifyDockEvent({
   if (response.ok) {
     return {
       metricName,
+      requestEventUniqueId,
     };
   }
 
@@ -237,6 +248,33 @@ export async function listNotifyDockEventsForOrder({
 
       return `${event.eventProperties.order_number || ""}`.trim() === orderNumber;
     });
+}
+
+export async function listEmailDeliveryEventsForProfile({customerEmail}) {
+  const profileId = await getProfileIdByEmail(customerEmail);
+
+  if (!profileId) {
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    filter: `equals(profile_id,"${profileId}")`,
+    include: "metric,profile",
+    "fields[event]": "datetime,timestamp,event_properties",
+    "fields[metric]": "name",
+    "fields[profile]": "email",
+    "page[size]": "200",
+    sort: "-datetime",
+  });
+  const payload = await fetchKlaviyoJson(`/events/?${params.toString()}`, {
+    emptyMessage: "Klaviyo did not return email delivery events.",
+  });
+  const includedByType = groupIncludedByType(payload?.included);
+  const deliveryMetricNames = new Set(Object.values(EMAIL_DELIVERY_METRIC_NAMES));
+
+  return (payload?.data || [])
+    .map((event) => normalizeNotifyDockEvent(event, includedByType))
+    .filter((event) => deliveryMetricNames.has(event.metricName));
 }
 
 export async function renderNotifyDockTemplate({
