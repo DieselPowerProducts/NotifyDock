@@ -199,20 +199,20 @@ try {
   await wait(20);
   find("Pressable", (node) => node.props.accessibilityLabel === "Built to Order" && node.props.onPress).props.onPress();
   await wait(20);
-  assert.deepEqual(find("DatePicker").props.selected, []);
-  find("DatePicker").props.onChange(["2026-09-23"]);
+  assert.equal(find("DatePicker").props.selected, undefined);
+  find("DatePicker").props.onChange("2026-09-23");
   await wait(20);
-  assert.deepEqual(
+  assert.equal(
     find("DatePicker").props.selected,
-    ["2026-09-23"],
-    "The first built-to-order click must paint the selected day",
+    "2026-09-23",
+    "The first built-to-order click must use Shopify's painted single-date state",
   );
-  find("DatePicker").props.onChange(["2026-09-23", "2026-09-25"]);
+  find("DatePicker").props.onChange("2026-09-25");
   await wait(20);
   assert.deepEqual(
     find("DatePicker").props.selected,
-    ["2026-09-23", "2026-09-24", "2026-09-25"],
-    "The second built-to-order click must paint every day in the range",
+    {start: "2026-09-23", end: "2026-09-25"},
+    "The second built-to-order click must use Shopify's painted range state",
   );
   assert.equal(
     find("Button", (node) => textOf(node) === "Apply range").props.disabled,

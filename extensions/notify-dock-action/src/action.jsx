@@ -938,6 +938,13 @@ function DynamicDelayEditorCard({
 
       <Box inlineSize="100%" maxInlineSize="100%" minInlineSize="100%">
         <DatePicker
+          key={
+            mode === BUILT_TO_ORDER_EDITOR_MODE
+              ? rangeIsComplete
+                ? "complete-range"
+                : "range-start"
+              : "single-date"
+          }
           selected={
             mode === BUILT_TO_ORDER_EDITOR_MODE
               ? buildDatePickerRangeSelection(delayRange)
@@ -1297,6 +1304,16 @@ function buildDatePickerRangeSelection(value) {
   const normalizedRange = normalizeDynamicDelayRange(value);
 
   if (!normalizedRange.start) {
+    return undefined;
+  }
+
+  return normalizedRange.end ? normalizedRange : normalizedRange.start;
+}
+
+function buildInclusiveDateRangeSelection(value) {
+  const normalizedRange = normalizeDynamicDelayRange(value);
+
+  if (!normalizedRange.start) {
     return [];
   }
 
@@ -1381,7 +1398,7 @@ function resolveDatePickerRangeChange(value, currentValue) {
       .map((selectedDate) => `${selectedDate || ""}`.trim())
       .filter(Boolean)
       .sort();
-    const currentDates = buildDatePickerRangeSelection(currentRange);
+    const currentDates = buildInclusiveDateRangeSelection(currentRange);
     const changedDates = [...new Set([...currentDates, ...selectedDates])]
       .filter(
         (selectedDate) =>
