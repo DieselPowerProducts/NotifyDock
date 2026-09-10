@@ -807,12 +807,18 @@ function ProductPreviewList({
                    const normalizedValue = normalizeDynamicDelayRange(value);
 
                    setDraftDelayRange(normalizedValue);
-
-                   if (normalizedValue.start && normalizedValue.end) {
-                     onDynamicDelayRangeChange(product.sku, normalizedValue);
-                     closeDynamicDelayEditor();
-                   }
                  }}
+                 onDelayRangeApply={() => {
+                   const normalizedValue = normalizeDynamicDelayRange(draftDelayRange);
+
+                   if (!normalizedValue.start || !normalizedValue.end) {
+                     return;
+                   }
+
+                   onDynamicDelayRangeChange(product.sku, normalizedValue);
+                   closeDynamicDelayEditor();
+                 }}
+                 onCancel={closeDynamicDelayEditor}
                />
              ) : (
                <BlockStack gap="small">
@@ -914,9 +920,14 @@ function DynamicDelayEditorCard({
   delayRange,
   delayDate,
   mode,
+  onCancel,
   onDelayDateChange,
+  onDelayRangeApply,
   onDelayRangeChange,
 }) {
+  const normalizedRange = normalizeDynamicDelayRange(delayRange);
+  const rangeIsComplete = Boolean(normalizedRange.start && normalizedRange.end);
+
   return (
     <BlockStack gap="small">
       <Text>
@@ -952,6 +963,21 @@ function DynamicDelayEditorCard({
           }}
         />
       </Box>
+
+      {mode === BUILT_TO_ORDER_EDITOR_MODE ? (
+        <InlineStack gap="small" inlineAlignment="start">
+          <Button
+            disabled={!rangeIsComplete}
+            onPress={onDelayRangeApply}
+            variant="primary"
+          >
+            Apply range
+          </Button>
+          <Button onPress={onCancel} variant="secondary">
+            Cancel
+          </Button>
+        </InlineStack>
+      ) : null}
     </BlockStack>
   );
 }
@@ -1270,7 +1296,31 @@ function isDynamicShippingDelay(emailType) {
 function buildDatePickerRangeSelection(value) {
   const normalizedRange = normalizeDynamicDelayRange(value);
 
-  return normalizedRange.start || normalizedRange.end ? normalizedRange : {};
+  if (!normalizedRange.start) {
+    return [];
+  }
+
+  const rangeEnd = normalizedRange.end || normalizedRange.start;
+  const startDate = new Date(`${normalizedRange.start}T00:00:00Z`);
+  const endDate = new Date(`${rangeEnd}T00:00:00Z`);
+
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    Number.isNaN(endDate.getTime()) ||
+    endDate < startDate
+  ) {
+    return [normalizedRange.start];
+  }
+
+  const selectedDates = [];
+  const currentDate = new Date(startDate);
+
+  while (currentDate <= endDate) {
+    selectedDates.push(currentDate.toISOString().slice(0, 10));
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+  }
+
+  return selectedDates;
 }
 
 function detailHasDynamicDelay(detail) {
@@ -1323,19 +1373,7 @@ function resolveDatePickerRangeChange(value, currentValue) {
   const currentRange = normalizeDynamicDelayRange(currentValue);
 
   if (typeof value === "string") {
-    const selectedDate = value.trim();
-
-    if (!selectedDate) {
-      return EMPTY_DYNAMIC_DELAY_RANGE;
-    }
-
-    if (!currentRange.start || currentRange.end) {
-      return {start: selectedDate, end: ""};
-    }
-
-    return selectedDate < currentRange.start
-      ? {start: selectedDate, end: currentRange.start}
-      : {start: currentRange.start, end: selectedDate};
+    return buildDynamicDelayRangeFromClick(value, currentRange);
   }
 
   if (Array.isArray(value)) {
@@ -1343,17 +1381,36 @@ function resolveDatePickerRangeChange(value, currentValue) {
       .map((selectedDate) => `${selectedDate || ""}`.trim())
       .filter(Boolean)
       .sort();
+    const currentDates = buildDatePickerRangeSelection(currentRange);
+    const changedDates = [...new Set([...currentDates, ...selectedDates])]
+      .filter(
+        (selectedDate) =>
+          currentDates.includes(selectedDate) !== selectedDates.includes(selectedDate),
+      )
+      .sort();
+    const clickedDate = changedDates.at(-1) || selectedDates.at(-1) || "";
 
-    if (!selectedDates.length) {
-      return EMPTY_DYNAMIC_DELAY_RANGE;
-    }
-
-    return selectedDates.length === 1
-      ? resolveDatePickerRangeChange(selectedDates[0], currentRange)
-      : {start: selectedDates[0], end: selectedDates.at(-1)};
+    return buildDynamicDelayRangeFromClick(clickedDate, currentRange);
   }
 
   return normalizeDynamicDelayRange(value);
+}
+
+function buildDynamicDelayRangeFromClick(value, currentValue) {
+  const selectedDate = `${value || ""}`.trim();
+  const currentRange = normalizeDynamicDelayRange(currentValue);
+
+  if (!selectedDate) {
+    return EMPTY_DYNAMIC_DELAY_RANGE;
+  }
+
+  if (!currentRange.start || currentRange.end) {
+    return {start: selectedDate, end: ""};
+  }
+
+  return selectedDate < currentRange.start
+    ? {start: selectedDate, end: currentRange.start}
+    : {start: currentRange.start, end: selectedDate};
 }
 
 function synchronizeDynamicDelayDetails(currentDetails, products) {
