@@ -199,7 +199,14 @@ try {
   await wait(20);
   find("Pressable", (node) => node.props.accessibilityLabel === "Built to Order" && node.props.onPress).props.onPress();
   await wait(20);
-  find("DatePicker").props.onChange({start: "2026-09-23", end: "2026-09-25"});
+  find("DatePicker").props.onChange("2026-09-23");
+  await wait(20);
+  assert.deepEqual(
+    find("DatePicker").props.selected,
+    {start: "2026-09-23", end: ""},
+    "The first built-to-order click must remain selected while the range is incomplete",
+  );
+  find("DatePicker").props.onChange("2026-09-25");
   await wait(370);
   const perItem = previewPayload();
   assert.equal(perItem.globalShipDate, "");

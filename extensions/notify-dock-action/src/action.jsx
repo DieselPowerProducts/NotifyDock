@@ -934,11 +934,13 @@ function DynamicDelayEditorCard({
           }
           onChange={(value) => {
             if (mode === BUILT_TO_ORDER_EDITOR_MODE) {
-              if (!value || Array.isArray(value) || typeof value === "string") {
+              const nextRange = resolveDatePickerRangeChange(value, delayRange);
+
+              if (!nextRange.start && !nextRange.end) {
                 return;
               }
 
-              onDelayRangeChange(value);
+              onDelayRangeChange(nextRange);
               return;
             }
 
@@ -1315,6 +1317,43 @@ function normalizeDynamicDelayRange(value) {
     end: `${value?.end || ""}`.trim(),
     start: `${value?.start || ""}`.trim(),
   };
+}
+
+function resolveDatePickerRangeChange(value, currentValue) {
+  const currentRange = normalizeDynamicDelayRange(currentValue);
+
+  if (typeof value === "string") {
+    const selectedDate = value.trim();
+
+    if (!selectedDate) {
+      return EMPTY_DYNAMIC_DELAY_RANGE;
+    }
+
+    if (!currentRange.start || currentRange.end) {
+      return {start: selectedDate, end: ""};
+    }
+
+    return selectedDate < currentRange.start
+      ? {start: selectedDate, end: currentRange.start}
+      : {start: currentRange.start, end: selectedDate};
+  }
+
+  if (Array.isArray(value)) {
+    const selectedDates = value
+      .map((selectedDate) => `${selectedDate || ""}`.trim())
+      .filter(Boolean)
+      .sort();
+
+    if (!selectedDates.length) {
+      return EMPTY_DYNAMIC_DELAY_RANGE;
+    }
+
+    return selectedDates.length === 1
+      ? resolveDatePickerRangeChange(selectedDates[0], currentRange)
+      : {start: selectedDates[0], end: selectedDates.at(-1)};
+  }
+
+  return normalizeDynamicDelayRange(value);
 }
 
 function synchronizeDynamicDelayDetails(currentDetails, products) {
