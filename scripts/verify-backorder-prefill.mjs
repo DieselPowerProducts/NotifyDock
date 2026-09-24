@@ -66,9 +66,9 @@ test("mixed known and missing information renders exact fallback per item withou
   assert.doesNotMatch(html, /Insert Ship date/);
 });
 
-test("actual prefill endpoint enforces the cutoff with automation off and still allows recipient-less new orders", async () => {
+async function buildPrefillLoader(testOrder) {
   const data = {shop: {name: "Test shop", ianaTimezone: "America/Los_Angeles"},
-    order: {...order, lineItems: {nodes: order.lineItems, pageInfo: {hasNextPage: false}}}};
+    order: {...testOrder, lineItems: {nodes: testOrder.lineItems, pageInfo: {hasNextPage: false}}}};
   const bundle = await build({entryPoints: ["app/routes/api.backorder-details.jsx"], bundle: true,
     platform: "node", format: "esm", write: false, plugins: [{
       name: "mock-authenticated-shopify",
@@ -82,6 +82,11 @@ test("actual prefill endpoint enforces the cutoff with automation off and still 
     }],
   });
   const {loader} = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+  return loader;
+}
+
+test("actual prefill endpoint enforces the cutoff with automation off and still allows recipient-less new orders", async () => {
+  const loader = await buildPrefillLoader(order);
   const savedEnv = {...process.env};
   try {
   process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
@@ -110,6 +115,32 @@ test("actual prefill endpoint enforces the cutoff with automation off and still 
   assert.equal((await (await request()).json()).status, "skipped", "Missing cutoff must not autofill historical orders");
   process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "invalid";
   assert.equal((await request()).status, 500, "Invalid cutoff must fail without autofill");
+  } finally {
+    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
+      if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
+    }
+  }
+});
+
+test("nonmatching availability opens a quiet manual composer; invalid eligible dates still report problems", async () => {
+  const savedEnv = {...process.env};
+  try {
+    process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    const manualOrder = structuredClone(order);
+    manualOrder.lineItems.forEach((item) => {item.variant.availability.value = "In Stock";});
+    const loader = await buildPrefillLoader(manualOrder);
+    const request = () => ({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
+    for (const cutoff of ["2026-09-24T19:59:59Z", "2026-09-24T21:40:39Z"]) {
+      process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
+      const selected = await (await loader(request())).json();
+      assert.equal(selected.status, "skipped", "Neither older nor newer nonmatching orders should show an autofill warning");
+      assert.equal(selected.payload, undefined);
+    }
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T19:59:59Z";
+    const invalidOrder = structuredClone(order);
+    invalidOrder.lineItems[0].variant.availabilityDate.value = "invalid";
+    const invalidLoader = await buildPrefillLoader(invalidOrder);
+    assert.equal((await (await invalidLoader(request())).json()).status, "waiting");
   } finally {
     for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
       if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
