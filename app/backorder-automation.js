@@ -67,7 +67,7 @@ export function normalizeAvailabilityDate(metafield, timeZone) {
   return formatStoreDate(timestamp, timeZone);
 }
 
-export function selectBackorderNotice({order, config, today, timeZone}) {
+export function selectBackorderNotice({order, config, today, timeZone, requireCustomerEmail = true}) {
   const skip = (reason) => ({status: "skipped", reason});
   const wait = (reason) => ({status: "waiting", reason});
   if (!order) return skip("Order no longer exists.");
@@ -129,7 +129,7 @@ export function selectBackorderNotice({order, config, today, timeZone}) {
   if (problems.length) return wait(problems.join(" "));
   if (!products.length) return wait("No unfulfilled Red Head variants are marked Backorder or Build to Order.");
   const customerEmail = `${order.email || order.customer?.email || ""}`.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return wait("A valid customer email is missing.");
+  if (requireCustomerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return wait("A valid customer email is missing.");
   if (!order.name) return wait("Order number is missing.");
 
   // The same variant can appear on multiple lines (for example, with different properties).

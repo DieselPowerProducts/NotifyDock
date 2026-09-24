@@ -66,7 +66,7 @@ globalThis.composerTestApi = {
   close() {},
   query: async () => ({data: {
     shop: {name: "Test shop"},
-    order: {name: "#TEST", email: "preview@example.com", tags: backorderFixture ? ["Backorder"] : [], lineItems: {nodes: []}},
+    order: {name: "#TEST", email: backorderFixture ? "" : "preview@example.com", tags: backorderFixture ? ["Backorder"] : [], lineItems: {nodes: []}},
   }}),
 };
 const previewRequests = [];
@@ -267,9 +267,10 @@ try {
       assert.equal(actual.delayMessage, product.delayMessage || "");
       assert.equal(actual.delayDate, product.delayDate || "");
     }
-    assert.equal(find("Button", (node) => textOf(node) === "Send email").props.disabled, false);
+    assert.equal(find("Button", (node) => textOf(node) === "Send email").props.disabled, true, "A missing recipient must block sending, not product previews");
     find("TextField", (node) => node.props.label === "To").props.onChange("personal@example.com");
     await wait(350);
+    assert.equal(find("Button", (node) => textOf(node) === "Send email").props.disabled, false);
     find("Button", (node) => textOf(node) === "Send email").props.onPress();
     await wait(30);
     assert.equal(sends.length, before + 1);

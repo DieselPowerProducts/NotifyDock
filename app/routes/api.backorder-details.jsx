@@ -12,7 +12,9 @@ export async function loader({request}) {
   }
   try {
     const loaded = await loadBackorderOrder(admin, orderId);
-    const selection = selectBackorderNotice({...loaded, config: {
+    // The recipient can be entered in the composer's To field after previewing.
+    // Keep recipient validation enabled for background sending (the selector default).
+    const selection = selectBackorderNotice({...loaded, requireCustomerEmail: false, config: {
       startAt: new Date(0), allowTestOrders: true, fromAddress: "orders@dieselpowerproducts.com",
     }});
     return cors(json(selection, {headers: {"Cache-Control": "no-store"}}));
