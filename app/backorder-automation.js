@@ -130,7 +130,7 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
     });
   }
   if (problems.length) return wait(problems.join(" "));
-  if (!products.length) return {...wait("No unfulfilled Red Head variants are marked Backorder or Build to Order."), code: "no_eligible_items"};
+  if (!products.length) return wait("No unfulfilled Red Head variants are marked Backorder or Build to Order.");
   const customerEmail = `${order.email || order.customer?.email || ""}`.trim();
   if (requireCustomerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return wait("A valid customer email is missing.");
   if (!order.name) return wait("Order number is missing.");

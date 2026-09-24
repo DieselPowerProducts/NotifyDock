@@ -122,22 +122,23 @@ test("actual prefill endpoint enforces the cutoff with automation off and still 
   }
 });
 
-test("nonmatching availability opens a quiet manual composer; invalid eligible dates still report problems", async () => {
+test("fixed cutoff suppresses old-order warnings while newer orders still report nonmatching availability", async () => {
   const savedEnv = {...process.env};
   try {
     process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T21:40:39Z";
     const manualOrder = structuredClone(order);
     manualOrder.lineItems.forEach((item) => {item.variant.availability.value = "In Stock";});
-    const loader = await buildPrefillLoader(manualOrder);
     const request = () => ({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
-    for (const cutoff of ["2026-09-24T19:59:59Z", "2026-09-24T21:40:39Z"]) {
-      process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
+    for (const [createdAt, expectedStatus] of [["2026-09-24T20:00:00Z", "skipped"], ["2026-09-24T21:53:00Z", "waiting"]]) {
+      const loader = await buildPrefillLoader({...manualOrder, createdAt});
       const selected = await (await loader(request())).json();
-      assert.equal(selected.status, "skipped", "Neither older nor newer nonmatching orders should show an autofill warning");
+      assert.equal(selected.status, expectedStatus);
+      assert.match(selected.reason, expectedStatus === "skipped" ? /predates/ : /No unfulfilled Red Head/);
       assert.equal(selected.payload, undefined);
     }
-    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T19:59:59Z";
     const invalidOrder = structuredClone(order);
+    invalidOrder.createdAt = "2026-09-24T21:53:00Z";
     invalidOrder.lineItems[0].variant.availabilityDate.value = "invalid";
     const invalidLoader = await buildPrefillLoader(invalidOrder);
     assert.equal((await (await invalidLoader(request())).json()).status, "waiting");

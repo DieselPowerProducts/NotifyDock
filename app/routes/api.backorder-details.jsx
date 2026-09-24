@@ -22,9 +22,6 @@ export async function loader({request}) {
     const selection = selectBackorderNotice({...loaded, requireCustomerEmail: false, config: {
       ...config, allowTestOrders: true,
     }});
-    // No matching items is a normal manual-composer state. Background jobs still
-    // wait for availability changes, but the composer should not show an error.
-    if (selection.code === "no_eligible_items") selection.status = "skipped";
     return cors(json(selection, {headers: {"Cache-Control": "no-store"}}));
   } catch (error) {
     return cors(json({error: error instanceof Error ? error.message : "Unable to read backorder details."}, {status: 500}));
