@@ -13,6 +13,7 @@ test("order webhooks process only their eligible new order, lock concurrent work
   const rows = [], sends = [], histories = [], loads = [];
   const orders = new Map();
   let failSend = false;
+  let beforeLoad = () => {};
   const orderFor = (id) => ({id: `gid://shopify/Order/${id}`, name: `#${id}`, createdAt: "2026-09-24T21:53:00Z",
     tags: ["Backorder"], email: "audit@example.com", lineItems: [{id: `L${id}`, sku: `RH-${id}`, title: "Red Head",
       currentQuantity: 1, unfulfilledQuantity: 1, variant: {id: `V${id}`, product: {vendor: "Red-Head Steering Gears Inc."},
@@ -37,7 +38,7 @@ test("order webhooks process only their eligible new order, lock concurrent work
     $transaction: async (fn) => fn(db),
   };
   globalThis.webhookTest = {db,
-    load: async (_admin, id) => {loads.push(id); await new Promise((r) => setTimeout(r, 5));
+    load: async (_admin, id) => {loads.push(id); beforeLoad(id); await new Promise((r) => setTimeout(r, 5));
       return {order: orders.get(id), today: "2026-09-24", timeZone: "America/Los_Angeles"};},
     send: async (payload) => {sends.push(structuredClone(payload)); if (failSend) throw new Error("Provider unavailable"); return {metricName: "audit"};},
   };
@@ -81,6 +82,66 @@ test("order webhooks process only their eligible new order, lock concurrent work
     process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-01-01T00:00:00Z";
     await assert.rejects(processEvent(eventFor(orderFor(5))));
     assert.equal(sends.length, 3);
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff.toISOString();
+
+    // Tag present at creation: the very first event sends, with no scan/refresh.
+    const taggedAtCreation = orderFor(10); orders.set(taggedAtCreation.id, taggedAtCreation);
+    assert.equal(await processEvent(eventFor(taggedAtCreation)), "accepted");
+    assert.equal(sends.length, 4);
+
+    // Created without a tag, followed by a later update adding it.
+    const laterTagged = orderFor(11); orders.set(laterTagged.id, laterTagged);
+    const untaggedEvent = eventFor(laterTagged); untaggedEvent.payload.tags = "VIP";
+    laterTagged.tags = ["VIP"];
+    assert.equal(await processEvent(untaggedEvent), "ignored");
+    assert.ok(!rows.some((r) => r.orderId === laterTagged.id));
+    laterTagged.tags = ["VIP", "Backorder"];
+    const taggedEvent = eventFor(laterTagged); taggedEvent.payload.tags = "VIP, Backorder";
+    assert.equal(await processEvent(taggedEvent), "accepted");
+    assert.equal(sends.length, 5);
+    // Late/reordered creation delivery and repeated updates cannot send again.
+    assert.equal(await processEvent(untaggedEvent), "ignored");
+    assert.equal(await processEvent(taggedEvent), "complete");
+    assert.equal(sends.length, 5);
+
+    // Missing customer information can be supplied on a subsequent order update.
+    const pending = orderFor(12); pending.email = ""; orders.set(pending.id, pending);
+    assert.equal(await processEvent(eventFor(pending)), "waiting");
+    pending.email = "audit@example.com";
+    assert.equal(await processEvent(eventFor(pending)), "accepted");
+    assert.equal(sends.length, 6);
+
+    // Older-order edits cannot alter eligibility, including adding a Red Head item,
+    // changing availability/ETA/message, retagging, and a brand-new updated_at.
+    const unchanged = {rows: rows.length, loads: loads.length, sends: sends.length};
+    const mutations = [
+      (o) => {o.tags = ["Backorder"];},
+      (o) => {o.lineItems.push(structuredClone(orderFor(80).lineItems[0]));},
+      (o) => {o.tags = ["VIP", "Backorder"]; o.lineItems = orderFor(81).lineItems;},
+      (o) => {o.lineItems[0].variant.availability.value = "Built to Order";
+        o.lineItems[0].variant.buildToOrderMessage = {value: "Ships in two weeks", type: "single_line_text_field"};},
+      (o) => {o.lineItems[0].variant.availabilityDate.value = "2027-01-01";},
+      (o) => {o.email = "different@example.com"; o.processedAt = "2026-09-25T00:00:00Z";},
+    ];
+    for (const createdAt of ["2026-09-24T21:40:38.999Z", "2026-09-24T14:40:38.999-07:00", "2025-01-01T00:00:00Z"]) {
+      for (const mutate of mutations) {
+        const old = {...orderFor(20), createdAt}; mutate(old); orders.set(old.id, old);
+        const event = eventFor(old); event.payload.updated_at = "2026-09-25T00:00:00Z";
+        assert.equal(await processEvent(event), "ignored");
+      }
+    }
+    assert.deepEqual({rows: rows.length, loads: loads.length, sends: sends.length}, unchanged);
+
+    // Even a selection that already passed cannot bypass the final fresh lookup.
+    const changedBeforeSend = orderFor(30); orders.set(changedBeforeSend.id, changedBeforeSend);
+    let reads = 0;
+    beforeLoad = (id) => {
+      if (id === changedBeforeSend.id && ++reads === 2) changedBeforeSend.createdAt = "2025-01-01T00:00:00Z";
+    };
+    assert.equal(await processEvent(eventFor(changedBeforeSend)), "retry");
+    assert.equal(reads, 2); assert.equal(sends.length, 6);
+    assert.ok(rows.find((r) => r.orderId === changedBeforeSend.id).sendPayload,
+      "A saved payload still cannot bypass the final cutoff check");
   } finally {
     delete globalThis.webhookTest;
     for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_SHOPS", "NOTIFY_DOCK_AUTOMATION_START_AT", "NOTIFY_DOCK_FOLLOWUP_ENABLED"]) {
@@ -109,13 +170,16 @@ test("webhook route acknowledges completed work and asks Shopify to retry busy/f
               : "export const processBackorderWebhook=async()=>{globalThis.webhookRouteTest.calls++;return globalThis.webhookRouteTest.result;};"}));
       }}]});
     const {action} = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
-    for (const [result, expected] of [["accepted", 200], ["ignored", 200], ["complete", 200], ["waiting", 200], ["busy", 503], ["retry", 503]]) {
-      globalThis.webhookRouteTest.result = result;
-      assert.equal((await action({request: new Request("https://test/webhook", {method: "POST"})})).status, expected);
+    for (const topic of ["ORDERS_CREATE", "ORDERS_UPDATED"]) {
+      globalThis.webhookRouteTest.topic = topic;
+      for (const [result, expected] of [["accepted", 200], ["ignored", 200], ["complete", 200], ["waiting", 200], ["busy", 503], ["retry", 503]]) {
+        globalThis.webhookRouteTest.result = result;
+        assert.equal((await action({request: new Request("https://test/webhook", {method: "POST"})})).status, expected);
+      }
     }
-    assert.equal(globalThis.webhookRouteTest.keptAlive, 6);
+    assert.equal(globalThis.webhookRouteTest.keptAlive, 12);
     globalThis.webhookRouteTest.topic = "PRODUCTS_UPDATE";
     assert.equal((await action({request: new Request("https://test/webhook", {method: "POST"})})).status, 400);
-    assert.equal(globalThis.webhookRouteTest.calls, 6);
+    assert.equal(globalThis.webhookRouteTest.calls, 12);
   } finally { delete globalThis.webhookRouteTest; }
 });
