@@ -8,15 +8,18 @@ const line = (id, kind = "Backorder") => ({id, sku: id, title: id, currentQuanti
   variant: {id: `v-${id}`, product: {vendor: "Red-Head Steering Gears Inc."}, availability: {value: kind},
     availabilityDate: {type: "date", value: "2026-10-15"}, buildToOrderMessage: {type: "single_line_text_field", value: "Ships in 2 weeks"}}});
 const order = {id: "order-1", name: "#1", lineItems: [line("A"), line("B", "Built to Order"), line("UNTRACKED")]};
-test("daily checks use 5pm Pacific through daylight saving, with one future test time", () => {
-  assert.equal(nextFollowupCheck(now).toISOString(), "2026-09-25T00:00:00.000Z");
-  assert.equal(nextFollowupCheck(new Date("2026-12-01T20:00:00Z")).toISOString(), "2026-12-02T01:00:00.000Z");
+test("daily checks use 4pm Pacific through daylight saving, with one future test time", () => {
+  assert.equal(nextFollowupCheck(now).toISOString(), "2026-09-24T23:00:00.000Z");
+  assert.equal(nextFollowupCheck(new Date("2026-12-01T20:00:00Z")).toISOString(), "2026-12-02T00:00:00.000Z");
   assert.equal(nextFollowupCheck(new Date("2026-09-24T20:50:00Z"), now.toISOString()).toISOString(), now.toISOString());
-  assert.equal(nextFollowupCheck(now, now.toISOString()).toISOString(), "2026-09-25T00:00:00.000Z");
+  assert.equal(nextFollowupCheck(now, now.toISOString()).toISOString(), "2026-09-24T23:00:00.000Z");
+  assert.equal(nextFollowupCheck(new Date("2026-09-24T23:01:00Z")).toISOString(), "2026-09-25T23:00:00.000Z");
 });
 test("only generic items actually included in the manual email can be tracked", () => {
   const input = {order, emailType: "dynamic_shipping_delay", products: [{sku: "A", delayState: "no_confirmed_date"}, {sku: "B", delayState: "build_to_order_message", delayMessage: "Ships soon"}]};
   assert.deepEqual(genericFollowupCandidates(input).map((r) => r.sku), ["A"]);
+  assert.deepEqual(genericFollowupCandidates({...input, products: [input.products[0],
+    {sku: "B", delayState: "specific_date", delayDate: "2026-10-15"}]}).map((r) => r.sku), ["A"]);
   assert.deepEqual(genericFollowupCandidates({...input, globalShipDate: "2026-10-15"}), []);
   assert.deepEqual(genericFollowupCandidates({...input, emailType: "awaiting_stock"}), []);
   assert.deepEqual(genericFollowupCandidates({...input, order: {...order, cancelledAt: now}}), []);

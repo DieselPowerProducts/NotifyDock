@@ -3,13 +3,13 @@ import {BACKORDER_PILOT_VENDOR, normalizeAvailabilityDate} from "./backorder-aut
 export function nextFollowupCheck(now, testAt = "") {
   const test = new Date(testAt);
   if (test > now) return test;
-  // Find the next 17:00 in Pacific time, including daylight-saving transitions.
+  // Find the next 16:00 in Pacific time, including daylight-saving transitions.
   const candidate = new Date(now);
   candidate.setUTCMinutes(0, 0, 0);
   for (let hour = 0; hour < 27; hour += 1) {
     if (candidate > now && new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles", hour: "2-digit", hourCycle: "h23",
-    }).format(candidate) === "17") return candidate;
+    }).format(candidate) === "16") return candidate;
     candidate.setUTCHours(candidate.getUTCHours() + 1);
   }
   throw new Error("Unable to calculate the next follow-up check.");

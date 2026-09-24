@@ -6,7 +6,7 @@ Enrollment requires a Shipping Delay email with no global date, an included prod
 
 Backorder records wait for a valid non-past `custom.product_availability_date`. Built to Order records wait for nonblank plain text in `custom.build_to_order_message`. Missing information remains pending. Cancelled, fulfilled, removed or reclassified items stop without sending. Ready items from the same initial email are grouped into one follow-up. Other waiting items can receive their own one-time follow-up later.
 
-The Vercel scheduler wakes every five minutes but only reads Shopify for database items whose `nextCheckAt` is due. The normal next check is 17:00 America/Los_Angeles (DST-aware). `NOTIFY_DOCK_FOLLOWUP_TEST_AT` can schedule the first check at one explicit future timestamp. It has no effect once that timestamp passes. Retries after processing failures are separate from daily product checks.
+The Vercel scheduler wakes every five minutes but only reads Shopify for database items whose `nextCheckAt` is due. The normal next check is 16:00 America/Los_Angeles (DST-aware). `NOTIFY_DOCK_FOLLOWUP_TEST_AT` can schedule the first check at one explicit future timestamp. It has no effect once that timestamp passes. Retries after processing failures are separate from daily product checks.
 
 `NOTIFY_DOCK_FOLLOWUP_ENABLED=true`, `NOTIFY_DOCK_FOLLOWUP_SHOPS` (exact shop allowlist) and `CRON_SECRET` are required. The current production pilot is fbgure-nn.myshopify.com. No scheduler is enabled in previews by default. Set enabled=false and redeploy to stop enrollment and processing.
 
