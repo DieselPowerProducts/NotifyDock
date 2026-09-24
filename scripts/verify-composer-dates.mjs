@@ -60,12 +60,13 @@ const products = [
   {sku: "TEST-A", productTitle: "Test product A"},
   {sku: "TEST-B", productTitle: "Test product B"},
 ];
+let backorderFixture = null;
 globalThis.composerTestApi = {
   data: {selected: [{id: "gid://shopify/Order/123"}]},
   close() {},
   query: async () => ({data: {
     shop: {name: "Test shop"},
-    order: {name: "#TEST", email: "preview@example.com", lineItems: {nodes: []}},
+    order: {name: "#TEST", email: "preview@example.com", tags: backorderFixture ? ["Backorder"] : [], lineItems: {nodes: []}},
   }}),
 };
 const previewRequests = [];
@@ -75,6 +76,9 @@ let holdPreviews = false;
 const pendingPreviews = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, options) => {
+  if (url.startsWith("/api/backorder-details")) {
+    return Response.json({status: "ready", payload: {products: backorderFixture, sku: backorderFixture.map((p) => p.sku).join(", ")}});
+  }
   if (url === "/api/notify-dock-preview-link") {
     const payload = JSON.parse(options.body);
     previewRequests.push(payload);
@@ -247,6 +251,35 @@ try {
   await wait(30);
   assert.equal(sends.at(-1).ship_date, "2026-09-09");
   console.log("PASS: Awaiting Stock commits the date on calendar selection for preview and send");
+  const backorderProduct = {...products[0], delayState: "specific_date", delayDate: "2026-10-15"};
+  const builtToOrderProduct = {...products[1], delayState: "build_to_order_message", delayMessage: "This product will ship in 2 Weeks from the manufacturer"};
+  for (const fixture of [[backorderProduct], [builtToOrderProduct], [backorderProduct, builtToOrderProduct]]) {
+    backorderFixture = fixture;
+    const before = sends.length;
+    root.render(React.createElement(compiled.exports.ActionComposer, {key: fixture.map((p) => p.sku).join(",")}));
+    await wait(1000);
+    assert.equal(sends.length, before, "Opening the order and prefilling must never send automatically");
+    const preview = previewPayload();
+    assert.equal(preview.products.length, fixture.length);
+    for (const product of fixture) {
+      const actual = preview.products.find((p) => p.sku === product.sku);
+      assert.equal(actual.delayState, product.delayState);
+      assert.equal(actual.delayMessage, product.delayMessage || "");
+      assert.equal(actual.delayDate, product.delayDate || "");
+    }
+    assert.equal(find("Button", (node) => textOf(node) === "Send email").props.disabled, false);
+    find("TextField", (node) => node.props.label === "To").props.onChange("personal@example.com");
+    await wait(350);
+    find("Button", (node) => textOf(node) === "Send email").props.onPress();
+    await wait(30);
+    assert.equal(sends.length, before + 1);
+    assert.equal(sends.at(-1).customer_email, "personal@example.com");
+    assert.equal(sends.at(-1).products.length, fixture.length);
+    if (fixture.includes(builtToOrderProduct)) {
+      assert.equal(sends.at(-1).products.find((p) => p.sku === "TEST-B").delay_message, builtToOrderProduct.delayMessage);
+    }
+  }
+  console.log("PASS: single Backorder, single Built to Order and mixed orders prefill and send only on click to the chosen email");
   assert.equal(nodes().some((node) => node.type === "DateField"), false);
   console.log(`${previewRequests.length} preview requests checked; ${sends.length} sends intercepted locally.`);
 } finally {

@@ -307,6 +307,10 @@ function isDynamicShippingDelayConfigured({globalShipDate, products}) {
       return Boolean(`${product?.delayDate || ""}`.trim());
     }
 
+    if (delayState === "build_to_order_message") {
+      return Boolean(`${product?.delayMessage || ""}`.trim());
+    }
+
     if (!isBusinessDaysDelayState(delayState)) {
       return true;
     }
@@ -361,6 +365,7 @@ function normalizeProduct(product) {
 
   return {
     delayDate: `${product?.delay_date || product?.delayDate || ""}`.trim(),
+    delayMessage: `${product?.delay_message || product?.delayMessage || ""}`.trim(),
     delayRangeEnd:
       `${product?.delay_range_end || product?.delayRangeEnd || ""}`.trim(),
     delayRangeStart:

@@ -34,6 +34,7 @@ export default reactExtension(TARGET, () => <ActionComposer />);
 function ActionComposer() {
   const {
     api,
+    backorderDetails,
     customerEmail,
     emailType,
     error,
@@ -140,9 +141,9 @@ function ActionComposer() {
     }
 
     setDynamicDelayDetails((current) =>
-      synchronizeDynamicDelayDetails(current, products),
+      synchronizeDynamicDelayDetails(current, products, backorderDetails),
     );
-  }, [emailType, products]);
+  }, [emailType, products, backorderDetails]);
 
   useEffect(() => {
     let cancelled = false;
@@ -859,6 +860,9 @@ function ProductPreviewList({
                 </InlineStack>
 
                 {isDynamicShippingDelay(emailType) && !product.isPlaceholder ? (
+                  dynamicDelayLookup.get(product.sku)?.delayState === "build_to_order_message" ? (
+                    <Text>{dynamicDelayLookup.get(product.sku).delayMessage}</Text>
+                  ) : (
                   <DynamicDelaySummary
                     detail={dynamicDelayLookup.get(product.sku) || EMPTY_DYNAMIC_DELAY_DETAIL}
                     disabled={globalDelayActive}
@@ -875,6 +879,7 @@ function ProductPreviewList({
                       );
                     }}
                   />
+                  )
                 ) : null}
               </BlockStack>
             )}
@@ -1430,17 +1435,18 @@ function buildDynamicDelayRangeFromClick(value, currentValue) {
     : {start: currentRange.start, end: selectedDate};
 }
 
-function synchronizeDynamicDelayDetails(currentDetails, products) {
+function synchronizeDynamicDelayDetails(currentDetails, products, backorderDetails = []) {
   const currentBySku = new Map(
     currentDetails.map((detail) => [`${detail?.sku || ""}`.trim(), detail]),
   );
 
   return products.map((product) => {
     const sku = `${product?.sku || ""}`.trim();
-    const currentDetail = currentBySku.get(sku);
+    const currentDetail = currentBySku.get(sku) || backorderDetails.find((detail) => detail.sku === sku);
 
     return {
       delayDate: `${currentDetail?.delayDate || ""}`.trim(),
+      delayMessage: `${currentDetail?.delayMessage || ""}`.trim(),
       delayRangeEnd: `${currentDetail?.delayRangeEnd || ""}`.trim(),
       delayRangeStart: `${currentDetail?.delayRangeStart || ""}`.trim(),
       delayState: `${currentDetail?.delayState || ""}`.trim(),
@@ -1472,6 +1478,7 @@ function decoratePreviewProducts({dynamicDelayDetails, emailType, products}) {
       `${detail?.sku || ""}`.trim(),
       {
         delayDate: `${detail?.delayDate || ""}`.trim(),
+        delayMessage: `${detail?.delayMessage || ""}`.trim(),
         delayRangeEnd: `${detail?.delayRangeEnd || ""}`.trim(),
         delayRangeStart: `${detail?.delayRangeStart || ""}`.trim(),
         delayState: `${detail?.delayState || ""}`.trim(),
@@ -1489,6 +1496,7 @@ function decoratePreviewProducts({dynamicDelayDetails, emailType, products}) {
     return {
       ...product,
       delayDate: detail.delayDate,
+      delayMessage: detail.delayMessage,
       delayRangeEnd: detail.delayRangeEnd,
       delayRangeStart: detail.delayRangeStart,
       delayState: detail.delayState,
