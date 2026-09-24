@@ -1,4 +1,4 @@
-import {createHash, randomUUID, timingSafeEqual} from "node:crypto";
+import {createHash, randomUUID} from "node:crypto";
 import prisma from "./db.server";
 import {unauthenticated} from "./shopify.server";
 import {METRIC_NAMES} from "./klaviyo.server";
@@ -8,16 +8,9 @@ import {buildNotifyDockMessage} from "./notify-dock-email-template.server";
 import {
   BACKORDER_EMAIL_TYPE, BACKORDER_HISTORY_TYPES, getBackorderAutomationConfig, hasBackorderTag, isOrderAfterBackorderCutoff,
 } from "./backorder-automation.js";
-import {BACKORDER_SCAN_QUERY, loadBackorderOrder, queryBackorderShopify} from "./backorder-automation-shopify.js";
+import {loadBackorderOrder} from "./backorder-automation-shopify.js";
 import {processBackorderJob} from "./backorder-automation-worker.js";
 import {saveFollowupTracking} from "./backorder-followup.server";
-
-export function isBackorderCronAuthorized(request, secret = process.env.CRON_SECRET) {
-  if (!secret) return false;
-  const received = Buffer.from(request.headers.get("authorization") || "");
-  const expected = Buffer.from(`Bearer ${secret}`);
-  return received.length === expected.length && timingSafeEqual(received, expected);
-}
 
 function jobId(shop, orderId) {
   return `nd-backorder-${createHash("sha256").update(`${shop}:${orderId}:initial`).digest("hex")}`;
@@ -28,7 +21,7 @@ async function enqueueOrders(shop, orders, config) {
     return /^gid:\/\/shopify\/Order\/\d+$/.test(order.id || "") &&
       isOrderAfterBackorderCutoff(order, config.startAt) && hasBackorderTag(order.tags);
   });
-  if (!eligible.length) return;
+  if (!eligible.length) return [];
   await prisma.notifyDockBackorderJob.createMany({
     data: eligible.map((order) => ({id: jobId(shop, order.id), shop, orderId: order.id, orderNumber: order.name || order.id})),
     skipDuplicates: true,
@@ -38,18 +31,20 @@ async function enqueueOrders(shop, orders, config) {
     where: {shop, orderId: {in: eligible.map((order) => order.id)}, status: "skipped"},
     data: {status: "queued", nextAttemptAt: new Date()},
   });
+  return eligible.map((order) => jobId(shop, order.id));
 }
 
 export async function enqueueBackorderWebhook({shop, payload}) {
   let config = getBackorderAutomationConfig();
   if (config.mode === "off" || !config.shops.includes(shop)) return;
   config = await requireBackorderPolicy(shop);
-  await enqueueOrders(shop, [{
+  const ids = await enqueueOrders(shop, [{
     id: payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`,
     name: payload.name,
     createdAt: payload.created_at,
     tags: payload.tags,
   }], config);
+  return ids[0];
 }
 
 const repository = {
@@ -81,71 +76,36 @@ const repository = {
   },
 };
 
-export async function runBackorderAutomation() {
-  const config = {...getBackorderAutomationConfig(), metricName: METRIC_NAMES[BACKORDER_EMAIL_TYPE]};
-  if (config.mode === "off") return {mode: "off", shops: []};
-  const deadline = Date.now() + 40000;
-  const results = [];
-  for (const shop of config.shops) {
-    if (Date.now() >= deadline) break;
-    await requireBackorderPolicy(shop);
-    const now = new Date();
-    await prisma.notifyDockBackorderScan.upsert({
-      where: {shop}, create: {shop, startAt: config.startAt}, update: {},
-    });
-    const leaseToken = randomUUID();
-    const claimed = await prisma.notifyDockBackorderScan.updateMany({
-      where: {shop, OR: [{leaseUntil: null}, {leaseUntil: {lt: now}}]},
-      data: {leaseToken, leaseUntil: new Date(now.getTime() + 10 * 60 * 1000)},
-    });
-    if (!claimed.count) {
-      results.push({shop, status: "busy"});
-      continue;
-    }
-    try {
-      const scan = await prisma.notifyDockBackorderScan.findUnique({where: {shop}});
-      // Prevent an environment change from silently including an older backlog.
-      if (scan.startAt.getTime() !== config.startAt.getTime()) {
-        throw new Error("START_AT differs from the saved activation time. Keep the original cutoff; changing it requires a deliberate database migration.");
-      }
-      const {admin} = await unauthenticated.admin(shop);
-      const data = await queryBackorderShopify(admin, BACKORDER_SCAN_QUERY, {
-        after: scan.cursor,
-        query: `tag:Backorder created_at:>='${config.startAt.toISOString()}'`,
-      });
-      await enqueueOrders(shop, data.orders.nodes, config);
-      await prisma.notifyDockBackorderScan.update({
-        where: {shop},
-        data: {cursor: data.orders.pageInfo.hasNextPage ? data.orders.pageInfo.endCursor : null},
-      });
-      const jobs = await prisma.notifyDockBackorderJob.findMany({
-        where: {shop, status: {in: ["queued", "waiting", "ready", "retry"]}, nextAttemptAt: {lte: now}},
-        orderBy: [{nextAttemptAt: "asc"}, {createdAt: "asc"}], take: 20,
-      });
-      const counts = {};
-      for (const job of jobs) {
-        if (Date.now() >= deadline) break;
-        const status = await processBackorderJob({
-          job, config, repository,
-          loadOrder: (orderId) => loadBackorderOrder(admin, orderId),
-          send: (payload) => sendAutomaticBackorderEvent({shop, orderId: job.orderId, payload, kind: "initial"}),
-          buildMessage: buildNotifyDockMessage,
-        });
-        counts[status] = (counts[status] || 0) + 1;
-      }
-      await prisma.notifyDockBackorderScan.update({
-        where: {shop}, data: {lastRunAt: new Date(), lastError: null},
-      });
-      results.push({shop, status: "ok", counts});
-    } catch (error) {
-      const message = error instanceof Error ? error.message.slice(0, 1000) : "Automation failed.";
-      await prisma.notifyDockBackorderScan.update({where: {shop}, data: {lastRunAt: new Date(), lastError: message}});
-      results.push({shop, status: "error", error: message});
-    } finally {
-      await prisma.notifyDockBackorderScan.updateMany({
-        where: {shop, leaseToken}, data: {leaseToken: null, leaseUntil: null},
-      });
-    }
+// Only the order identified by an authenticated Shopify webhook is processed.
+// There is no scheduled discovery scan or queue-wide drain.
+export async function processBackorderWebhook({shop, payload}) {
+  const id = await enqueueBackorderWebhook({shop, payload});
+  if (!id) return "ignored";
+  const config = {...await requireBackorderPolicy(shop), metricName: METRIC_NAMES[BACKORDER_EMAIL_TYPE]};
+  if (config.mode === "off") return "ignored";
+  const token = randomUUID();
+  const now = new Date();
+  const claimed = await prisma.notifyDockBackorderJob.updateMany({
+    where: {id, shop, status: {in: ["queued", "waiting", "ready", "retry"]},
+      OR: [{leaseUntil: null}, {leaseUntil: {lt: now}}]},
+    data: {leaseToken: token, leaseUntil: new Date(now.getTime() + 10 * 60 * 1000)},
+  });
+  if (!claimed.count) {
+    const existing = await prisma.notifyDockBackorderJob.findUnique({where: {id}});
+    return existing && ["accepted", "previously_notified"].includes(existing.status) ? "complete" : "busy";
   }
-  return {mode: config.mode, shops: results};
+  try {
+    const job = await prisma.notifyDockBackorderJob.findUnique({where: {id}});
+    const {admin} = await unauthenticated.admin(shop);
+    return await processBackorderJob({
+      job, config, repository,
+      loadOrder: (orderId) => loadBackorderOrder(admin, orderId),
+      send: (email) => sendAutomaticBackorderEvent({shop, orderId: job.orderId, payload: email, kind: "initial"}),
+      buildMessage: buildNotifyDockMessage,
+    });
+  } finally {
+    await prisma.notifyDockBackorderJob.updateMany({
+      where: {id, leaseToken: token}, data: {leaseToken: null, leaseUntil: null},
+    });
+  }
 }

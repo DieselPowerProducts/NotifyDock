@@ -119,6 +119,8 @@ model NotifyDockBackorderJob {
   attemptedAt    DateTime?
   acceptedAt     DateTime?
   nextAttemptAt  DateTime @default(now())
+  leaseToken     String?
+  leaseUntil     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

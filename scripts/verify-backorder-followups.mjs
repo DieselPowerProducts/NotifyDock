@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {build} from "esbuild";
-import {genericFollowupCandidates, nextFollowupCheck, resolveFollowupItem} from "../app/backorder-followup.js";
+import {genericFollowupCandidates, nextFollowupCheck, resolveFollowupItem, isFollowupRunHour} from "../app/backorder-followup.js";
 const now = new Date("2026-09-24T20:55:00Z");
 const line = (id, kind = "Backorder") => ({id, sku: id, title: id, currentQuantity: 1, unfulfilledQuantity: 1,
   variant: {id: `v-${id}`, product: {vendor: "Red-Head Steering Gears Inc."}, availability: {value: kind},
@@ -14,6 +14,11 @@ test("daily checks use 4pm Pacific through daylight saving, with one future test
   assert.equal(nextFollowupCheck(new Date("2026-09-24T20:50:00Z"), now.toISOString()).toISOString(), now.toISOString());
   assert.equal(nextFollowupCheck(now, now.toISOString()).toISOString(), "2026-09-24T23:00:00.000Z");
   assert.equal(nextFollowupCheck(new Date("2026-09-24T23:01:00Z")).toISOString(), "2026-09-25T23:00:00.000Z");
+  for (const [date, expected] of [
+    ["2026-09-24T22:59:59Z", false], ["2026-09-24T23:00:00Z", true],
+    ["2026-09-24T23:05:00Z", true], ["2026-09-25T00:00:00Z", false],
+    ["2026-12-01T23:00:00Z", false], ["2026-12-02T00:00:00Z", true],
+  ]) assert.equal(isFollowupRunHour(new Date(date)), expected, date);
 });
 test("only generic items actually included in the manual email can be tracked", () => {
   const input = {order, emailType: "dynamic_shipping_delay", products: [{sku: "A", delayState: "no_confirmed_date"}, {sku: "B", delayState: "build_to_order_message", delayMessage: "Ships soon"}]};
@@ -69,12 +74,14 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
       update: async ({data}) => Object.assign(lease, data),
     },
     notifyDockFollowupItem: {
+      count: async ({where}) => rows.filter((r) => matches(r, where)).length,
       createMany: async ({data}) => { for (const row of data) if (!rows.some((r) => r.id === row.id)) rows.push({...row, status: "pending", initialHistory: history}); },
       findMany: async ({where}) => rows.filter((r) => matches(r, where)).map((r) => structuredClone(r)),
       update: async ({where, data}) => Object.assign(rows.find((r) => matches(r, where)), data),
       updateMany: async ({where, data}) => { rows.filter((r) => matches(r, where)).forEach((r) => Object.assign(r, data)); },
     },
     notifyDockFollowupBatch: {
+      count: async ({where}) => batches.filter((r) => matches(r, where)).length,
       findMany: async ({where}) => batches.filter((r) => matches(r, where)).map((r) => structuredClone(r)),
       create: async ({data}) => { const row = {...data, status: "pending"}; batches.push(row); return row; },
       update: async ({where, data}) => Object.assign(batches.find((r) => matches(r, where)), data),
@@ -111,7 +118,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     assert.deepEqual(sends[0].products.map((p) => p.sku), ["A", "B"]);
     assert.doesNotMatch(sends[0].message, /UNTRACKED/);
     failComplete = false;
-    await api.runBackorderFollowups(new Date(now.getTime() + 16 * 60 * 1000));
+    await api.runBackorderFollowups(nextFollowupCheck(now));
     assert.equal(sends.length, 2);
     assert.deepEqual(sends[0], sends[1], "Uncertain retry must use the same event ID and frozen payload");
     await api.runBackorderFollowups(new Date(now.getTime() + 24 * 60 * 60 * 1000));

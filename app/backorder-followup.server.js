@@ -11,7 +11,7 @@ import {hasBackorderTag, isOrderAfterBackorderCutoff} from "./backorder-automati
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function authorizeFollowupCron(request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = process.env.NOTIFY_DOCK_FOLLOWUP_SECRET;
   if (!secret) return false;
   const actual = Buffer.from(request.headers.get("authorization") || "");
   const expected = Buffer.from(`Bearer ${secret}`);
@@ -133,7 +133,7 @@ export async function runBackorderFollowups(now = new Date()) {
           ]);
         } catch (error) {
           await prisma.notifyDockFollowupBatch.update({where: {id: batch.id}, data: {
-            nextAttemptAt: new Date(now.getTime() + 15 * 60 * 1000), reason: `${error.message}`.slice(0, 1000),
+            nextAttemptAt: nextFollowupCheck(now), reason: `${error.message}`.slice(0, 1000),
           }});
         }
       }
@@ -146,5 +146,11 @@ export async function runBackorderFollowups(now = new Date()) {
       await prisma.notifyDockFollowupLease.updateMany({where: {shop, token}, data: {token: null, leaseUntil: null, lastRunAt: now}});
     }
   }
-  return {shops: summary};
+  // Drain additional pages during this one daily run, without another timer.
+  let remaining = 0;
+  for (const shop of shops) {
+    remaining += await prisma.notifyDockFollowupItem.count({where: {shop, status: "pending", nextCheckAt: {lte: now}}});
+    remaining += await prisma.notifyDockFollowupBatch.count({where: {shop, status: "pending", nextAttemptAt: {lte: now}}});
+  }
+  return {shops: summary, hasMore: remaining > 0};
 }

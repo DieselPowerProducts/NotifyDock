@@ -1,5 +1,11 @@
 import {BACKORDER_PILOT_VENDOR, normalizeAvailabilityDate} from "./backorder-automation.js";
 
+export function isFollowupRunHour(now = new Date()) {
+  return Number.isFinite(now.getTime()) && new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", hour: "2-digit", hourCycle: "h23",
+  }).format(now) === "16";
+}
+
 export function nextFollowupCheck(now, testAt = "") {
   const test = new Date(testAt);
   if (test > now) return test;

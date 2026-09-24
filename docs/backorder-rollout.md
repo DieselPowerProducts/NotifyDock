@@ -16,12 +16,24 @@ Missing or invalid cutoff configuration cannot autofill historical orders.
 An older order cannot enroll through a manual email, and old pending items and
 queued follow-up batches cannot send. Manual email sending remains available.
 
-Initial automation checks every five minutes. Off mode still stops its cron immediately.
-The original locked cutoff is retained. Initial selection and enqueue
-both verify Shopify's order creation timestamp; adding a Backorder tag to an older
-order does not make it eligible.
-Order webhooks have not been activated; the five-minute cron can discover eligible
-new orders when enabled.
+Initial automation uses authenticated Shopify `orders/create` and `orders/updated`
+webhooks. Adding the Backorder tag triggers processing of that one order; there is
+no scheduled order search or queue-wide scan. The former scan endpoint returns 410.
+Off mode stops webhook processing. The original locked cutoff is retained.
+Initial selection and enqueue both verify Shopify's order creation timestamp;
+adding a Backorder tag or Red Head item to an older order does not make it eligible.
+
+The job is saved before sending. A per-order database lease prevents concurrent
+webhook deliveries from sending together; accepted jobs do not reopen. Slow or
+failed processing returns HTTP 503 for Shopify to retry, while Vercel `waitUntil`
+keeps the in-flight work alive within the function lifetime. Retries retain the
+same saved Klaviyo payload and event ID. There is no background five-minute retry
+timer. Shopify retries are finite; exhausted failures remain recorded for review.
+
+One GitHub Actions schedule runs daily at `0 16 * * *`, timezone
+`America/Los_Angeles`, calling the authenticated follow-up endpoint. There are no
+Vercel cron entries. GitHub may delay starting scheduled jobs; the endpoint allows
+the 4 p.m. hour and refuses to check products outside it. See backorder-followups.md.
 
 Migration `20260924222000_lock_backorder_cutoff` provisions the production cutoff
 in `NotifyDockAutomationPolicy`. The app has no creation or update path for this
