@@ -253,10 +253,14 @@ try {
   console.log("PASS: Awaiting Stock commits the date on calendar selection for preview and send");
   const backorderProduct = {...products[0], delayState: "specific_date", delayDate: "2026-10-15"};
   const builtToOrderProduct = {...products[1], delayState: "build_to_order_message", delayMessage: "This product will ship in 2 Weeks from the manufacturer"};
-  for (const fixture of [[backorderProduct], [builtToOrderProduct], [backorderProduct, builtToOrderProduct]]) {
+  const genericBackorder = {...products[0], delayState: "no_confirmed_date"};
+  const genericBuiltToOrder = {...products[1], delayState: "no_confirmed_date"};
+  let fixtureIndex = 0;
+  for (const fixture of [[backorderProduct], [builtToOrderProduct], [backorderProduct, builtToOrderProduct],
+    [genericBackorder], [genericBuiltToOrder], [genericBackorder, builtToOrderProduct], [backorderProduct, genericBuiltToOrder]]) {
     backorderFixture = fixture;
     const before = sends.length;
-    root.render(React.createElement(compiled.exports.ActionComposer, {key: fixture.map((p) => p.sku).join(",")}));
+    root.render(React.createElement(compiled.exports.ActionComposer, {key: `backorder-fixture-${fixtureIndex++}`}));
     await wait(1000);
     assert.equal(sends.length, before, "Opening the order and prefilling must never send automatically");
     const preview = previewPayload();
@@ -276,6 +280,7 @@ try {
     assert.equal(sends.length, before + 1);
     assert.equal(sends.at(-1).customer_email, "personal@example.com");
     assert.equal(sends.at(-1).products.length, fixture.length);
+    assert.deepEqual(sends.at(-1).products.map((p) => p.delay_state), fixture.map((p) => p.delayState));
     if (fixture.includes(builtToOrderProduct)) {
       assert.equal(sends.at(-1).products.find((p) => p.sku === "TEST-B").delay_message, builtToOrderProduct.delayMessage);
     }

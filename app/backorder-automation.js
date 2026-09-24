@@ -103,14 +103,15 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
     const date = builtToOrder ? "" : normalizeAvailabilityDate(variant.availabilityDate, timeZone);
     const messageField = variant.buildToOrderMessage;
     const message = builtToOrder ? `${messageField?.value || ""}`.trim() : "";
+    const hasDateValue = Boolean(`${variant.availabilityDate?.value || ""}`.trim());
     if (!sku) problems.push(`${item.title}: SKU is missing.`);
     if (builtToOrder) {
-      if (!message || (messageField?.type && !["single_line_text_field", "multi_line_text_field"].includes(messageField.type))) {
-        problems.push(`${sku || item.title}: custom.build_to_order_message is missing or invalid (expected plain text).`);
+      if (message && messageField?.type && !["single_line_text_field", "multi_line_text_field"].includes(messageField.type)) {
+        problems.push(`${sku || item.title}: custom.build_to_order_message is invalid (expected plain text).`);
       }
-    } else if (!isValidAvailabilityDate(date)) {
-      problems.push(`${sku || item.title}: custom.product_availability_date is missing or invalid (expected a date/time convertible to the store's calendar date).`);
-    } else if (date < today) {
+    } else if (hasDateValue && !isValidAvailabilityDate(date)) {
+      problems.push(`${sku || item.title}: custom.product_availability_date is invalid (expected a date/time convertible to the store's calendar date).`);
+    } else if (date && date < today) {
       problems.push(`${sku || item.title}: confirmed availability date is in the past.`);
     }
     products.push({
@@ -119,7 +120,9 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
       productVariantTitle: item.variantTitle || "",
       productImageUrl: variant.image?.url || item.image?.url || "",
       productImageAlt: variant.image?.altText || item.image?.altText || item.title,
-      delayState: builtToOrder ? "build_to_order_message" : "specific_date",
+      delayState: builtToOrder
+        ? (message ? "build_to_order_message" : "no_confirmed_date")
+        : (date ? "specific_date" : "no_confirmed_date"),
       delayMessage: message,
       delayDate: date,
       delayRangeStart: "",
@@ -139,7 +142,7 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
   );
   return {
     status: "ready",
-    reason: "All selected items have availability dates or Built to Order messages.",
+    reason: "Selected items use their availability date, Built to Order message, or the generic unconfirmed-date notice.",
     payload: {
       customerEmail,
       emailType: BACKORDER_EMAIL_TYPE,

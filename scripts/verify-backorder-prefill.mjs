@@ -22,6 +22,50 @@ test("background selection still requires an email by default", () => {
   assert.match(selected.reason, /customer email/);
 });
 
+const select = (lineItems) => selectBackorderNotice({
+  order: {...order, lineItems}, today: "2026-09-24", config: {startAt: new Date(0)}, requireCustomerEmail: false,
+});
+const genericMessage = "Based on information that we have received from the manufacturer, there is not yet a confirmed ship date for this item.";
+
+test("absent and blank dates/messages keep both products with generic messaging", () => {
+  for (const field of [undefined, null, {value: ""}, {value: "  "}]) {
+    const result = select(order.lineItems.map((item, index) => ({...item, variant: {
+      ...item.variant, [index === 0 ? "availabilityDate" : "buildToOrderMessage"]: field,
+    }})));
+    assert.equal(result.status, "ready");
+    assert.equal(result.payload.products.length, 2);
+    assert.ok(result.payload.products.every((p) => p.delayState === "no_confirmed_date" && !p.delayDate && !p.delayMessage));
+  }
+});
+
+test("invalid or past dates and unsupported message types still require correction", () => {
+  for (const field of [{value: "not a date"}, {type: "date", value: "2026-02-30"}, {type: "date", value: "2000-01-01"}]) {
+    assert.equal(select([{...order.lineItems[0], variant: {...order.lineItems[0].variant, availabilityDate: field}}]).status, "waiting");
+  }
+  assert.equal(select([{...order.lineItems[1], variant: {...order.lineItems[1].variant,
+    buildToOrderMessage: {type: "rich_text_field", value: '{"type":"root"}'},
+  }}]).status, "waiting");
+});
+
+test("mixed known and missing information renders exact fallback per item without placeholders", async () => {
+  const selected = select([
+    ...order.lineItems,
+    {...order.lineItems[0], sku: "NO-DATE", variant: {...order.lineItems[0].variant, availabilityDate: null}},
+    {...order.lineItems[1], sku: "NO-MESSAGE", variant: {...order.lineItems[1].variant, buildToOrderMessage: null}},
+  ]);
+  assert.equal(selected.status, "ready");
+  const bundle = await build({entryPoints: ["app/notify-dock-email-template.server.js"], bundle: true,
+    platform: "node", format: "esm", write: false});
+  const {buildNotifyDockMessage} = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+  const html = buildNotifyDockMessage(selected.payload);
+  assert.equal(html.split(genericMessage).length - 1, 2);
+  assert.match(html, /October 15, 2099/);
+  assert.match(html, /This product will ship in 2 Weeks from the manufacturer/);
+  assert.match(html, /NO-DATE/);
+  assert.match(html, /NO-MESSAGE/);
+  assert.doesNotMatch(html, /Insert Ship date/);
+});
+
 test("actual prefill endpoint returns both products and messages without an order email", async () => {
   const data = {shop: {name: "Test shop", ianaTimezone: "America/Los_Angeles"},
     order: {...order, lineItems: {nodes: order.lineItems, pageInfo: {hasNextPage: false}}}};
