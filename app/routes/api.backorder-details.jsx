@@ -1,7 +1,7 @@
 import {json} from "@remix-run/node";
 import {authenticate} from "../shopify.server";
 import {loadBackorderOrder} from "../backorder-automation-shopify.js";
-import {selectBackorderNotice} from "../backorder-automation.js";
+import {getBackorderAutomationConfig, selectBackorderNotice} from "../backorder-automation.js";
 
 // Read-only prefilling for the existing order composer. Never queues or sends email.
 export async function loader({request}) {
@@ -11,11 +11,16 @@ export async function loader({request}) {
     return cors(json({error: "A valid order ID is required."}, {status: 400}));
   }
   try {
+    const config = getBackorderAutomationConfig();
+    if (Number.isNaN(config.startAt.getTime())) {
+      return cors(json({status: "skipped", reason: "Backorder autofill requires a configured order creation cutoff."},
+        {headers: {"Cache-Control": "no-store"}}));
+    }
     const loaded = await loadBackorderOrder(admin, orderId);
     // The recipient can be entered in the composer's To field after previewing.
     // Keep recipient validation enabled for background sending (the selector default).
     const selection = selectBackorderNotice({...loaded, requireCustomerEmail: false, config: {
-      startAt: new Date(0), allowTestOrders: true, fromAddress: "orders@dieselpowerproducts.com",
+      ...config, allowTestOrders: true,
     }});
     return cors(json(selection, {headers: {"Cache-Control": "no-store"}}));
   } catch (error) {

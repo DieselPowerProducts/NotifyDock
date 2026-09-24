@@ -9,7 +9,9 @@ Production configuration saved September 24, 2026:
 - `NOTIFY_DOCK_AUTOMATION_START_AT=2026-09-24T21:40:39Z` (2:40:39 p.m. Pacific)
 - Follow-up checks: 4 p.m. America/Los_Angeles, including daylight saving changes.
 
-The explicit cutoff applies to follow-ups even while initial automation is off.
+The explicit cutoff applies to manual composer autofill and follow-ups even while initial automation is off.
+Older orders open with no automatic SKU selection; staff can still enter SKUs and dates manually.
+Missing or invalid cutoff configuration cannot autofill historical orders.
 An older order cannot enroll through a manual email, and old pending items and
 queued follow-up batches cannot send. Manual email sending remains available.
 

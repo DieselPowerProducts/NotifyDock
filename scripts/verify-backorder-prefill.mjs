@@ -66,7 +66,7 @@ test("mixed known and missing information renders exact fallback per item withou
   assert.doesNotMatch(html, /Insert Ship date/);
 });
 
-test("actual prefill endpoint returns both products and messages without an order email", async () => {
+test("actual prefill endpoint enforces the cutoff with automation off and still allows recipient-less new orders", async () => {
   const data = {shop: {name: "Test shop", ianaTimezone: "America/Los_Angeles"},
     order: {...order, lineItems: {nodes: order.lineItems, pageInfo: {hasNextPage: false}}}};
   const bundle = await build({entryPoints: ["app/routes/api.backorder-details.jsx"], bundle: true,
@@ -82,7 +82,13 @@ test("actual prefill endpoint returns both products and messages without an orde
     }],
   });
   const {loader} = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
-  const response = await loader({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
+  const savedEnv = {...process.env};
+  try {
+  process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+  const request = () => loader({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
+  for (const cutoff of ["2026-09-24T19:59:59Z", order.createdAt]) {
+  process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
+  const response = await request();
   assert.equal(response.status, 200);
   const selected = await response.json();
   assert.equal(selected.status, "ready");
@@ -90,4 +96,23 @@ test("actual prefill endpoint returns both products and messages without an orde
   assert.equal(selected.payload.products.length, 2);
   assert.equal(selected.payload.products[0].delayDate, "2099-10-15");
   assert.equal(selected.payload.products[1].delayMessage, "This product will ship in 2 Weeks from the manufacturer");
+  }
+  for (const cutoff of ["2026-09-24T20:00:01Z", "2026-09-24T21:40:39Z"]) {
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
+    const response = await request();
+    assert.equal(response.status, 200);
+    const selected = await response.json();
+    assert.equal(selected.status, "skipped");
+    assert.match(selected.reason, /predates/);
+    assert.equal(selected.payload, undefined, "Older orders must not return any autofill products or SKUs");
+  }
+  delete process.env.NOTIFY_DOCK_AUTOMATION_START_AT;
+  assert.equal((await (await request()).json()).status, "skipped", "Missing cutoff must not autofill historical orders");
+  process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "invalid";
+  assert.equal((await request()).status, 500, "Invalid cutoff must fail without autofill");
+  } finally {
+    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
+      if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
+    }
+  }
 });
