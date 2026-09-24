@@ -105,3 +105,34 @@ model NotifyDockFollowupLease {
   lastRunAt DateTime?
   lastError String?
 }
+
+model NotifyDockBackorderJob {
+  id             String   @id
+  shop           String
+  orderId        String
+  orderNumber    String
+  status         String   @default("queued")
+  reason         String?
+  attempts       Int      @default(0)
+  previewPayload Json?
+  sendPayload    Json?
+  attemptedAt    DateTime?
+  acceptedAt     DateTime?
+  nextAttemptAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([shop, orderId])
+  @@index([shop, status, nextAttemptAt])
+}
+
+model NotifyDockBackorderScan {
+  shop          String   @id
+  startAt       DateTime
+  cursor        String?
+  leaseToken    String?
+  leaseUntil    DateTime?
+  lastRunAt     DateTime?
+  lastError     String?
+  updatedAt     DateTime @updatedAt
+}

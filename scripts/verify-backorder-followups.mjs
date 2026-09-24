@@ -42,7 +42,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
   process.env.NOTIFY_DOCK_FOLLOWUP_ENABLED = "true";
   process.env.NOTIFY_DOCK_FOLLOWUP_SHOPS = shop;
   const history = {id: "history-1", shop, orderId: order.id, orderNumber: order.name,
-    source: "app", requestEventUniqueId: "initial-accepted", emailType: "dynamic_shipping_delay", customerEmail: "work@example.com"};
+    source: "backorder_automation", requestEventUniqueId: "initial-accepted", emailType: "dynamic_shipping_delay", customerEmail: "work@example.com"};
   const rows = [];
   const batches = [];
   const sends = [];
@@ -111,9 +111,21 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     await api.runBackorderFollowups(new Date(now.getTime() + 24 * 60 * 60 * 1000));
     assert.equal(sends.length, 2, "Accepted items never send again");
     assert.ok(rows.every((r) => r.status === "accepted"));
+    process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = shop;
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T21:55:00Z";
+    order.createdAt = "2026-09-24T20:00:00Z";
+    rows.forEach((r) => {r.status = "pending";});
+    await api.runBackorderFollowups(new Date("2026-09-25T23:00:00Z"));
+    assert.ok(rows.every((r) => r.status === "skipped"), "Pre-activation tracked orders are excluded");
+    assert.equal(sends.length, 2);
+    batches[0].status = "pending";
+    await api.runBackorderFollowups(new Date("2026-09-26T23:00:00Z"));
+    assert.equal(batches[0].status, "held", "Pre-activation queued batches cannot send either");
+    assert.equal(sends.length, 2);
   } finally {
     delete globalThis.followupTest;
-    for (const key of ["NOTIFY_DOCK_FOLLOWUP_ENABLED", "NOTIFY_DOCK_FOLLOWUP_SHOPS"]) {
+    for (const key of ["NOTIFY_DOCK_FOLLOWUP_ENABLED", "NOTIFY_DOCK_FOLLOWUP_SHOPS", "NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_SHOPS", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
       if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
     }
   }

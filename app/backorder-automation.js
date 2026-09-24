@@ -14,12 +14,12 @@ export function getBackorderAutomationConfig(env = process.env) {
     .split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
   const startValue = env.NOTIFY_DOCK_AUTOMATION_START_AT || "";
   const startAt = new Date(startValue);
-  if (mode !== "off" && (
-    !shops.length || shops.some((shop) => !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) ||
+  if ((mode !== "off" && (!shops.length || shops.some((shop) => !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)))) ||
+    ((mode !== "off" || startValue) && (
     !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(startValue) ||
     !isValidAvailabilityDate(startValue.slice(0, 10)) ||
     Number.isNaN(startAt.getTime())
-  )) {
+  ))) {
     throw new Error("Automation requires shop domains and an explicit START_AT timestamp with a timezone. Only orders created on or after START_AT are eligible.");
   }
   return {

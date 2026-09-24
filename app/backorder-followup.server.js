@@ -5,6 +5,7 @@ import {sendNotifyDockEvent, METRIC_NAMES} from "./klaviyo.server";
 import {buildDynamicShippingDelayDetailsHtml} from "./notify-dock-email-template.server";
 import {loadBackorderOrder} from "./backorder-automation-shopify.js";
 import {genericFollowupCandidates, nextFollowupCheck, resolveFollowupItem} from "./backorder-followup.js";
+import {getBackorderAutomationConfig, hasBackorderTag} from "./backorder-automation.js";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function followupEnabled(shop) {
@@ -23,14 +24,16 @@ export async function prepareFollowupTracking({admin, shop, orderId, products, e
   if (!followupEnabled(shop) || emailType !== "dynamic_shipping_delay" || globalShipDate ||
     !products.some((p) => ["", "no_confirmed_date"].includes(p.delayState || ""))) return [];
   const {order} = await loadBackorderOrder(admin, orderId);
+  const initialConfig = getBackorderAutomationConfig();
+  if (!Number.isNaN(initialConfig.startAt.getTime()) && (!order || !(new Date(order.createdAt) >= initialConfig.startAt) || !hasBackorderTag(order.tags))) return [];
   return genericFollowupCandidates({order, products, emailType, globalShipDate});
 }
 
-export async function saveFollowupTracking(history, candidates, now = new Date()) {
-  if (!candidates.length || !followupEnabled(history.shop) || !history.requestEventUniqueId || history.source !== "app") return;
-  // Called only AFTER Klaviyo accepts the manual email and its history row is saved.
+export async function saveFollowupTracking(history, candidates, now = new Date(), db = prisma) {
+  if (!candidates.length || !followupEnabled(history.shop) || !history.requestEventUniqueId || !["app", "backorder_automation"].includes(history.source)) return;
+  // Called only AFTER Klaviyo accepts the initial email and its history row is saved.
   // No backfill and no order/catalog scan can create these records.
-  await prisma.notifyDockFollowupItem.createMany({data: candidates.map((item) => ({
+  await db.notifyDockFollowupItem.createMany({data: candidates.map((item) => ({
     ...item, id: hash(`${history.shop}:${history.orderId}:${item.lineItemId}`),
     shop: history.shop, orderId: history.orderId, initialHistoryId: history.id,
     nextCheckAt: nextFollowupCheck(now, process.env.NOTIFY_DOCK_FOLLOWUP_TEST_AT),
@@ -38,6 +41,9 @@ export async function saveFollowupTracking(history, candidates, now = new Date()
 }
 
 export async function runBackorderFollowups(now = new Date()) {
+  const initialConfig = getBackorderAutomationConfig();
+  const predatesActivation = (order) => !Number.isNaN(initialConfig.startAt.getTime()) &&
+    (!order?.createdAt || !(new Date(order.createdAt) >= initialConfig.startAt));
   const shops = (process.env.NOTIFY_DOCK_FOLLOWUP_SHOPS || "").split(",").map((s) => s.trim()).filter(followupEnabled);
   const summary = [];
   const deadline = Date.now() + 45000;
@@ -62,12 +68,16 @@ export async function runBackorderFollowups(now = new Date()) {
       for (const records of groups.values()) {
         if (Date.now() >= deadline) break;
         const history = records[0].initialHistory;
-        if (history.shop !== shop || history.source !== "app" || !history.requestEventUniqueId ||
+        if (history.shop !== shop || !["app", "backorder_automation"].includes(history.source) || !history.requestEventUniqueId ||
           history.emailType !== "dynamic_shipping_delay" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(history.customerEmail)) {
           await prisma.notifyDockFollowupItem.updateMany({where: {id: {in: records.map((r) => r.id)}}, data: {status: "skipped", reason: "Initial send record is not eligible."}});
           continue;
         }
         const loaded = await load(history.orderId);
+        if (predatesActivation(loaded.order)) {
+          await prisma.notifyDockFollowupItem.updateMany({where: {id: {in: records.map((r) => r.id)}}, data: {status: "skipped", reason: "Order predates automatic rollout; no follow-up."}});
+          continue;
+        }
         const ready = [];
         for (const record of records) {
           const resolution = resolveFollowupItem(record, loaded);
@@ -97,6 +107,10 @@ export async function runBackorderFollowups(now = new Date()) {
         if (Date.now() >= deadline) break;
         const records = await prisma.notifyDockFollowupItem.findMany({where: {batchId: batch.id, shop}});
         const loaded = await load(batch.orderId);
+        if (predatesActivation(loaded.order)) {
+          await prisma.notifyDockFollowupBatch.update({where: {id: batch.id}, data: {status: "held", reason: "Order predates automatic rollout; no follow-up."}});
+          continue;
+        }
         const current = records.map((r) => resolveFollowupItem(r, loaded));
         const expected = batch.payload.products;
         if (!records.length || current.some((r) => r.status !== "ready") || current.length !== expected.length ||
