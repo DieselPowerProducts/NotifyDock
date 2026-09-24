@@ -34,6 +34,17 @@ export function hasBackorderTag(tags) {
   return values.some((tag) => tag.trim().toLowerCase() === "backorder");
 }
 
+export function isOrderAfterBackorderCutoff(order, startAt) {
+  const value = order?.createdAt;
+  // Require Shopify's explicit timezone; never interpret a missing date as epoch
+  // or a timezone-less date in the server's local timezone.
+  if (!Number.isFinite(startAt?.getTime()) || typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value) ||
+    !isValidAvailabilityDate(value.slice(0, 10))) return false;
+  const createdAt = new Date(value);
+  return Number.isFinite(createdAt.getTime()) && createdAt >= startAt;
+}
+
 export function isValidAvailabilityDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -71,9 +82,7 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
   const skip = (reason) => ({status: "skipped", reason});
   const wait = (reason) => ({status: "waiting", reason});
   if (!order) return skip("Order no longer exists.");
-  const createdAt = new Date(order.createdAt);
-  if (Number.isNaN(createdAt.getTime())) return wait("Order creation time is missing.");
-  if (createdAt < config.startAt) return skip("Order predates automation activation.");
+  if (!isOrderAfterBackorderCutoff(order, config.startAt)) return skip("Order predates automation activation or its creation cutoff cannot be verified.");
   if (order.cancelledAt) return skip("Order was cancelled.");
   if (order.test && !config.allowTestOrders) return skip("Test orders are excluded.");
   if (!hasBackorderTag(order.tags)) return skip("Order does not have the Backorder tag.");

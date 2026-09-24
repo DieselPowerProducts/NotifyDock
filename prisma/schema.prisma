@@ -136,3 +136,8 @@ model NotifyDockBackorderScan {
   lastError     String?
   updatedAt     DateTime @updatedAt
 }
+
+model NotifyDockAutomationPolicy {
+  shop String @id
+  startAt DateTime
+}

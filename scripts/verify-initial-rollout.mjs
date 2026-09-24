@@ -21,11 +21,15 @@ test("cutoff remains configured with initial automation off and rejects malforme
 
 test("initial worker excludes older orders even when newly tagged and never contacts sender", async () => {
   for (const createdAt of ["2026-09-24T21:54:59Z", "2025-01-01T00:00:00Z", "invalid"]) {
-    let sends = 0;
-    const result = await processBackorderJob({job: {id: "old"}, config,
-      repository: {update: async () => {}}, loadOrder: async () => ({...loaded, order: {...order, createdAt}}),
-      send: async () => {sends++;}, buildMessage: () => "test"});
-    assert.notEqual(result, "accepted"); assert.equal(sends, 0);
+    for (const status of ["queued", "waiting", "ready", "retry"]) {
+      for (const sendPayload of [null, {orderId: order.id, customerEmail: order.email, products: []}]) {
+        let sends = 0;
+        const result = await processBackorderJob({job: {id: "old", status, sendPayload}, config,
+          repository: {update: async () => {}}, loadOrder: async () => ({...loaded, order: {...order, createdAt}}),
+          send: async () => {sends++;}, buildMessage: () => "test"});
+        assert.equal(result, "skipped"); assert.equal(sends, 0);
+      }
+    }
   }
 });
 test("mixed initial notice enrolls only its generic product and freezes stable retry identity", async () => {

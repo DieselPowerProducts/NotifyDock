@@ -16,12 +16,26 @@ An older order cannot enroll through a manual email, and old pending items and
 queued follow-up batches cannot send. Manual email sending remains available.
 
 Initial automation is implemented but its cron returns immediately in off mode.
-When authorized to enable, retain the saved cutoff unless Mike explicitly changes
-it. Initial selection and enqueue both verify Shopify's order creation timestamp;
-adding a Backorder tag to an older order does not make it eligible. The first scan
-persists the cutoff and rejects a later environment change that disagrees with it.
+When authorized to enable, retain the saved cutoff. Initial selection and enqueue
+both verify Shopify's order creation timestamp; adding a Backorder tag to an older
+order does not make it eligible.
 Order webhooks have not been activated; the five-minute cron can discover eligible
 new orders when enabled.
+
+Migration `20260924222000_lock_backorder_cutoff` provisions the production cutoff
+in `NotifyDockAutomationPolicy`. The app has no creation or update path for this
+policy, and a database trigger rejects updates/deletes. Missing configuration,
+missing policy, an environment/database mismatch or a database read failure stops
+automatic processing. Both initial processing and follow-ups require this policy,
+even when initial automation is off. Restoring a deleted policy requires an explicit
+migration, not a runtime setting.
+
+All automatic provider calls go through `sendAutomaticBackorderEvent`, which checks
+the policy again, verifies the appropriate enable flag and payload order ID, reloads
+the actual order from Shopify, and rejects old, missing, invalid-date or cancelled
+orders. Queued and retry payloads cannot bypass this gate. Manual Send/Resend retain
+their existing authenticated routes. If the policy is unavailable, manual sending
+does not enroll follow-ups and composer autofill stays blank.
 
 Only exact-vendor `Red-Head Steering Gears Inc.` items with Backorder or Built to
 Order availability qualify. Initial sends save email history and enroll only items

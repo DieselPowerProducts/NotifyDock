@@ -7,7 +7,7 @@ const now = new Date("2026-09-24T20:55:00Z");
 const line = (id, kind = "Backorder") => ({id, sku: id, title: id, currentQuantity: 1, unfulfilledQuantity: 1,
   variant: {id: `v-${id}`, product: {vendor: "Red-Head Steering Gears Inc."}, availability: {value: kind},
     availabilityDate: {type: "date", value: "2026-10-15"}, buildToOrderMessage: {type: "single_line_text_field", value: "Ships in 2 weeks"}}});
-const order = {id: "order-1", name: "#1", lineItems: [line("A"), line("B", "Built to Order"), line("UNTRACKED")]};
+const order = {id: "gid://shopify/Order/1", name: "#1", createdAt: "2026-09-24T20:00:00Z", tags: ["Backorder"], lineItems: [line("A"), line("B", "Built to Order"), line("UNTRACKED")]};
 test("daily checks use 4pm Pacific through daylight saving, with one future test time", () => {
   assert.equal(nextFollowupCheck(now).toISOString(), "2026-09-24T23:00:00.000Z");
   assert.equal(nextFollowupCheck(new Date("2026-12-01T20:00:00Z")).toISOString(), "2026-12-02T00:00:00.000Z");
@@ -41,6 +41,9 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
   const savedEnv = {...process.env};
   process.env.NOTIFY_DOCK_FOLLOWUP_ENABLED = "true";
   process.env.NOTIFY_DOCK_FOLLOWUP_SHOPS = shop;
+  process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+  process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = shop;
+  process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T19:00:00Z";
   const history = {id: "history-1", shop, orderId: order.id, orderNumber: order.name,
     source: "backorder_automation", requestEventUniqueId: "initial-accepted", emailType: "dynamic_shipping_delay", customerEmail: "work@example.com"};
   const rows = [];
@@ -49,11 +52,14 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
   const histories = [];
   const lease = {};
   let failComplete = false;
+  let policy = {startAt: new Date("2026-09-24T19:00:00Z")};
+  let failPolicyRead = false;
   const matches = (row, where) => Object.entries(where).every(([key, value]) =>
     value && typeof value === "object" && !(value instanceof Date)
       ? value.in ? value.in.includes(row[key]) : value.lte ? row[key] <= value.lte : true
       : row[key] === value);
   const db = {
+    notifyDockAutomationPolicy: {findUnique: async () => {if (failPolicyRead) throw new Error("Database unavailable"); return policy;}},
     notifyDockFollowupLease: {
       upsert: async () => lease,
       updateMany: async ({where, data}) => {
@@ -113,8 +119,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     assert.ok(rows.every((r) => r.status === "accepted"));
     process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
     process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = shop;
-    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T21:55:00Z";
-    order.createdAt = "2026-09-24T20:00:00Z";
+    order.createdAt = "2026-09-24T18:00:00Z";
     rows.forEach((r) => {r.status = "pending";});
     await api.runBackorderFollowups(new Date("2026-09-25T23:00:00Z"));
     assert.ok(rows.every((r) => r.status === "skipped"), "Pre-activation tracked orders are excluded");
@@ -122,6 +127,27 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     batches[0].status = "pending";
     await api.runBackorderFollowups(new Date("2026-09-26T23:00:00Z"));
     assert.equal(batches[0].status, "held", "Pre-activation queued batches cannot send either");
+    assert.equal(sends.length, 2);
+    // Reproduce both audit findings: existing pending work must stay blocked
+    // when settings disappear or change, regardless of the initial-email mode.
+    rows.forEach((r) => {r.status = "pending";}); batches[0].status = "pending";
+    for (const mode of ["off", "live"]) {
+      process.env.NOTIFY_DOCK_AUTOMATION_MODE = mode;
+      for (const value of ["", "invalid", "2026-09-24T17:00:00Z", "2026-09-24T21:00:00Z"]) {
+        process.env.NOTIFY_DOCK_AUTOMATION_START_AT = value;
+        await assert.rejects(api.runBackorderFollowups(new Date("2026-09-27T23:00:00Z")));
+        assert.equal(sends.length, 2);
+        assert.ok(rows.every((r) => r.status === "pending"));
+        assert.deepEqual(await api.prepareFollowupTracking({admin: {}, shop, orderId: order.id,
+          products: [{sku: "A", delayState: "no_confirmed_date"}], emailType: "dynamic_shipping_delay"}), []);
+      }
+    }
+    process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T19:00:00Z";
+    policy = null;
+    await assert.rejects(api.runBackorderFollowups(now));
+    failPolicyRead = true;
+    await assert.rejects(api.runBackorderFollowups(now));
     assert.equal(sends.length, 2);
   } finally {
     delete globalThis.followupTest;

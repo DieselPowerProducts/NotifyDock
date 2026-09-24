@@ -1,10 +1,12 @@
 import {createHash, randomUUID, timingSafeEqual} from "node:crypto";
 import prisma from "./db.server";
 import {unauthenticated} from "./shopify.server";
-import {METRIC_NAMES, sendNotifyDockEvent} from "./klaviyo.server";
+import {METRIC_NAMES} from "./klaviyo.server";
+import {sendAutomaticBackorderEvent} from "./backorder-automatic-send.server";
+import {requireBackorderPolicy} from "./backorder-policy.server";
 import {buildNotifyDockMessage} from "./notify-dock-email-template.server";
 import {
-  BACKORDER_EMAIL_TYPE, BACKORDER_HISTORY_TYPES, getBackorderAutomationConfig, hasBackorderTag,
+  BACKORDER_EMAIL_TYPE, BACKORDER_HISTORY_TYPES, getBackorderAutomationConfig, hasBackorderTag, isOrderAfterBackorderCutoff,
 } from "./backorder-automation.js";
 import {BACKORDER_SCAN_QUERY, loadBackorderOrder, queryBackorderShopify} from "./backorder-automation-shopify.js";
 import {processBackorderJob} from "./backorder-automation-worker.js";
@@ -23,9 +25,8 @@ function jobId(shop, orderId) {
 
 async function enqueueOrders(shop, orders, config) {
   const eligible = orders.filter((order) => {
-    const createdAt = new Date(order.createdAt);
     return /^gid:\/\/shopify\/Order\/\d+$/.test(order.id || "") &&
-      !Number.isNaN(createdAt.getTime()) && createdAt >= config.startAt && hasBackorderTag(order.tags);
+      isOrderAfterBackorderCutoff(order, config.startAt) && hasBackorderTag(order.tags);
   });
   if (!eligible.length) return;
   await prisma.notifyDockBackorderJob.createMany({
@@ -40,8 +41,9 @@ async function enqueueOrders(shop, orders, config) {
 }
 
 export async function enqueueBackorderWebhook({shop, payload}) {
-  const config = getBackorderAutomationConfig();
+  let config = getBackorderAutomationConfig();
   if (config.mode === "off" || !config.shops.includes(shop)) return;
+  config = await requireBackorderPolicy(shop);
   await enqueueOrders(shop, [{
     id: payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`,
     name: payload.name,
@@ -86,6 +88,7 @@ export async function runBackorderAutomation() {
   const results = [];
   for (const shop of config.shops) {
     if (Date.now() >= deadline) break;
+    await requireBackorderPolicy(shop);
     const now = new Date();
     await prisma.notifyDockBackorderScan.upsert({
       where: {shop}, create: {shop, startAt: config.startAt}, update: {},
@@ -125,7 +128,7 @@ export async function runBackorderAutomation() {
         const status = await processBackorderJob({
           job, config, repository,
           loadOrder: (orderId) => loadBackorderOrder(admin, orderId),
-          send: sendNotifyDockEvent,
+          send: (payload) => sendAutomaticBackorderEvent({shop, orderId: job.orderId, payload, kind: "initial"}),
           buildMessage: buildNotifyDockMessage,
         });
         counts[status] = (counts[status] || 0) + 1;

@@ -73,10 +73,12 @@ async function buildPrefillLoader(testOrder) {
     platform: "node", format: "esm", write: false, plugins: [{
       name: "mock-authenticated-shopify",
       setup(builder) {
-        builder.onResolve({filter: /^(?:@remix-run\/node)$|\/shopify\.server$/}, (args) => ({path: args.path, namespace: "mock"}));
+        builder.onResolve({filter: /^(?:@remix-run\/node)$|\/(?:shopify|db)\.server$/}, (args) => ({path: args.path, namespace: "mock"}));
         builder.onLoad({filter: /.*/, namespace: "mock"}, (args) => ({contents: args.path.includes("@remix")
           ? "export const json = (data, init) => Response.json(data, init);"
-          : `export const authenticate = {admin: async () => ({cors: (r) => r, admin: {graphql: async () => Response.json({data: ${JSON.stringify(data)}})}})};`,
+          : args.path.includes("db.server")
+            ? 'export default {notifyDockAutomationPolicy:{findUnique:async()=>({startAt:new Date("2026-09-24T21:40:39Z")})}};'
+            : `export const authenticate = {admin: async () => ({session:{shop:"pilot.myshopify.com"},cors: (r) => r, admin: {graphql: async () => Response.json({data: ${JSON.stringify(data)}})}})};`,
         }));
       },
     }],
@@ -86,37 +88,37 @@ async function buildPrefillLoader(testOrder) {
 }
 
 test("actual prefill endpoint enforces the cutoff with automation off and still allows recipient-less new orders", async () => {
-  const loader = await buildPrefillLoader(order);
   const savedEnv = {...process.env};
   try {
-  process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
-  const request = () => loader({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
-  for (const cutoff of ["2026-09-24T19:59:59Z", order.createdAt]) {
-  process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
-  const response = await request();
-  assert.equal(response.status, 200);
-  const selected = await response.json();
-  assert.equal(selected.status, "ready");
-  assert.equal(selected.payload.customerEmail, "");
-  assert.equal(selected.payload.products.length, 2);
-  assert.equal(selected.payload.products[0].delayDate, "2099-10-15");
-  assert.equal(selected.payload.products[1].delayMessage, "This product will ship in 2 Weeks from the manufacturer");
-  }
-  for (const cutoff of ["2026-09-24T20:00:01Z", "2026-09-24T21:40:39Z"]) {
-    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = cutoff;
-    const response = await request();
-    assert.equal(response.status, 200);
-    const selected = await response.json();
-    assert.equal(selected.status, "skipped");
-    assert.match(selected.reason, /predates/);
-    assert.equal(selected.payload, undefined, "Older orders must not return any autofill products or SKUs");
-  }
-  delete process.env.NOTIFY_DOCK_AUTOMATION_START_AT;
-  assert.equal((await (await request()).json()).status, "skipped", "Missing cutoff must not autofill historical orders");
-  process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "invalid";
-  assert.equal((await request()).status, 500, "Invalid cutoff must fail without autofill");
+    process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = "pilot.myshopify.com";
+    process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T21:40:39Z";
+    const request = () => ({request: new Request(`https://example.com/api/backorder-details?order_id=${order.id}`)});
+    for (const createdAt of ["2026-09-24T21:53:00Z", "2026-09-24T21:40:39Z"]) {
+      const loader = await buildPrefillLoader({...order, createdAt});
+      const response = await loader(request());
+      assert.equal(response.status, 200);
+      const selected = await response.json();
+      assert.equal(selected.status, "ready");
+      assert.equal(selected.payload.customerEmail, "");
+      assert.equal(selected.payload.products.length, 2);
+      assert.equal(selected.payload.products[0].delayDate, "2099-10-15");
+      assert.equal(selected.payload.products[1].delayMessage, "This product will ship in 2 Weeks from the manufacturer");
+    }
+    for (const createdAt of [order.createdAt, "2026-09-24T21:40:38.999Z"]) {
+      const loader = await buildPrefillLoader({...order, createdAt});
+      const selected = await (await loader(request())).json();
+      assert.equal(selected.status, "skipped");
+      assert.match(selected.reason, /predates/);
+      assert.equal(selected.payload, undefined, "Older orders must not return any autofill products or SKUs");
+    }
+    const loader = await buildPrefillLoader({...order, createdAt: "2026-09-24T21:53:00Z"});
+    for (const value of ["", "invalid", "2026-09-24T19:00:00Z", "2026-09-24T23:00:00Z"]) {
+      process.env.NOTIFY_DOCK_AUTOMATION_START_AT = value;
+      assert.equal((await (await loader(request())).json()).status, "skipped", "Missing, invalid or changed settings cannot bypass the locked cutoff");
+    }
   } finally {
-    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
+    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT", "NOTIFY_DOCK_AUTOMATION_SHOPS"]) {
       if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
     }
   }
@@ -126,6 +128,7 @@ test("fixed cutoff suppresses old-order warnings while newer orders still report
   const savedEnv = {...process.env};
   try {
     process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
+    process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = "pilot.myshopify.com";
     process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T21:40:39Z";
     const manualOrder = structuredClone(order);
     manualOrder.lineItems.forEach((item) => {item.variant.availability.value = "In Stock";});
@@ -143,7 +146,7 @@ test("fixed cutoff suppresses old-order warnings while newer orders still report
     const invalidLoader = await buildPrefillLoader(invalidOrder);
     assert.equal((await (await invalidLoader(request())).json()).status, "waiting");
   } finally {
-    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
+    for (const key of ["NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_START_AT", "NOTIFY_DOCK_AUTOMATION_SHOPS"]) {
       if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
     }
   }

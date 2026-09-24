@@ -1,18 +1,20 @@
 import {json} from "@remix-run/node";
 import {authenticate} from "../shopify.server";
 import {loadBackorderOrder} from "../backorder-automation-shopify.js";
-import {getBackorderAutomationConfig, selectBackorderNotice} from "../backorder-automation.js";
+import {selectBackorderNotice} from "../backorder-automation.js";
+import {requireBackorderPolicy} from "../backorder-policy.server";
 
 // Read-only prefilling for the existing order composer. Never queues or sends email.
 export async function loader({request}) {
-  const {admin, cors} = await authenticate.admin(request);
+  const {admin, cors, session} = await authenticate.admin(request);
   const orderId = new URL(request.url).searchParams.get("order_id") || "";
   if (!/^gid:\/\/shopify\/Order\/\d+$/.test(orderId)) {
     return cors(json({error: "A valid order ID is required."}, {status: 400}));
   }
   try {
-    const config = getBackorderAutomationConfig();
-    if (Number.isNaN(config.startAt.getTime())) {
+    let config;
+    try { config = await requireBackorderPolicy(session.shop); }
+    catch (_error) {
       return cors(json({status: "skipped", reason: "Backorder autofill requires a configured order creation cutoff."},
         {headers: {"Cache-Control": "no-store"}}));
     }

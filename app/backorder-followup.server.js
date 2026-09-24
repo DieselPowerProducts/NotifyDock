@@ -1,17 +1,15 @@
 import {createHash, randomUUID, timingSafeEqual} from "node:crypto";
 import prisma from "./db.server";
 import {unauthenticated} from "./shopify.server";
-import {sendNotifyDockEvent, METRIC_NAMES} from "./klaviyo.server";
+import {METRIC_NAMES} from "./klaviyo.server";
+import {sendAutomaticBackorderEvent} from "./backorder-automatic-send.server";
+import {requireBackorderPolicy, followupEnabled} from "./backorder-policy.server";
 import {buildDynamicShippingDelayDetailsHtml} from "./notify-dock-email-template.server";
 import {loadBackorderOrder} from "./backorder-automation-shopify.js";
 import {genericFollowupCandidates, nextFollowupCheck, resolveFollowupItem} from "./backorder-followup.js";
-import {getBackorderAutomationConfig, hasBackorderTag} from "./backorder-automation.js";
+import {hasBackorderTag, isOrderAfterBackorderCutoff} from "./backorder-automation.js";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
-export function followupEnabled(shop) {
-  return process.env.NOTIFY_DOCK_FOLLOWUP_ENABLED === "true" &&
-    (process.env.NOTIFY_DOCK_FOLLOWUP_SHOPS || "").split(",").map((s) => s.trim()).includes(shop);
-}
 export function authorizeFollowupCron(request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -23,14 +21,17 @@ export function authorizeFollowupCron(request) {
 export async function prepareFollowupTracking({admin, shop, orderId, products, emailType, globalShipDate}) {
   if (!followupEnabled(shop) || emailType !== "dynamic_shipping_delay" || globalShipDate ||
     !products.some((p) => ["", "no_confirmed_date"].includes(p.delayState || ""))) return [];
+  let config;
+  try { config = await requireBackorderPolicy(shop); }
+  catch (_error) { return []; } // Manual sending remains available; no automatic enrollment.
   const {order} = await loadBackorderOrder(admin, orderId);
-  const initialConfig = getBackorderAutomationConfig();
-  if (!Number.isNaN(initialConfig.startAt.getTime()) && (!order || !(new Date(order.createdAt) >= initialConfig.startAt) || !hasBackorderTag(order.tags))) return [];
+  if (!isOrderAfterBackorderCutoff(order, config.startAt) || !hasBackorderTag(order.tags)) return [];
   return genericFollowupCandidates({order, products, emailType, globalShipDate});
 }
 
 export async function saveFollowupTracking(history, candidates, now = new Date(), db = prisma) {
   if (!candidates.length || !followupEnabled(history.shop) || !history.requestEventUniqueId || !["app", "backorder_automation"].includes(history.source)) return;
+  await requireBackorderPolicy(history.shop, db);
   // Called only AFTER Klaviyo accepts the initial email and its history row is saved.
   // No backfill and no order/catalog scan can create these records.
   await db.notifyDockFollowupItem.createMany({data: candidates.map((item) => ({
@@ -41,13 +42,12 @@ export async function saveFollowupTracking(history, candidates, now = new Date()
 }
 
 export async function runBackorderFollowups(now = new Date()) {
-  const initialConfig = getBackorderAutomationConfig();
-  const predatesActivation = (order) => !Number.isNaN(initialConfig.startAt.getTime()) &&
-    (!order?.createdAt || !(new Date(order.createdAt) >= initialConfig.startAt));
   const shops = (process.env.NOTIFY_DOCK_FOLLOWUP_SHOPS || "").split(",").map((s) => s.trim()).filter(followupEnabled);
   const summary = [];
   const deadline = Date.now() + 45000;
   for (const shop of shops) {
+    const config = await requireBackorderPolicy(shop);
+    const predatesActivation = (order) => !isOrderAfterBackorderCutoff(order, config.startAt);
     const token = randomUUID();
     await prisma.notifyDockFollowupLease.upsert({where: {shop}, create: {shop}, update: {}});
     const lock = await prisma.notifyDockFollowupLease.updateMany({where: {shop, OR: [{leaseUntil: null}, {leaseUntil: {lt: now}}]},
@@ -119,7 +119,7 @@ export async function runBackorderFollowups(now = new Date()) {
           continue;
         }
         try {
-          const result = await sendNotifyDockEvent(batch.payload);
+          const result = await sendAutomaticBackorderEvent({shop, orderId: batch.orderId, payload: batch.payload, kind: "followup"});
           const payload = batch.payload;
           await prisma.$transaction([
             prisma.notifyDockEmailHistory.upsert({where: {sourceEventId: batch.id}, update: {}, create: {
