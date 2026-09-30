@@ -16,7 +16,10 @@
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
-    "vite": "vite"
+    "vite": "vite",
+    "typecheck:extensions": "tsc --project extensions/backorder-email/tsconfig.json && tsc --project extensions/notify-dock-action/tsconfig.json",
+    "test:composer": "node scripts/verify-composer-dates.mjs",
+    "test:regression": "node --test scripts/verify-backorder-followups.mjs scripts/verify-backorder-policy.mjs scripts/verify-backorder-prefill.mjs scripts/verify-backorder-webhooks.mjs scripts/verify-followup-schedule.mjs scripts/verify-initial-rollout.mjs"
   },
   "type": "module",
   "engines": {
@@ -52,7 +55,9 @@
     "eslint-config-prettier": "^10.0.1",
     "prettier": "^3.2.4",
     "typescript": "^5.2.2",
-    "vite": "^6.2.2"
+    "vite": "^6.2.2",
+    "@shopify/ui-extensions-tester": "2026.7.0",
+    "jsdom": "26.1.0"
   },
   "workspaces": {
     "packages": [

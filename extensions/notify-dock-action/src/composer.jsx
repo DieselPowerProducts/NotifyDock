@@ -1,5 +1,5 @@
-import {useEffect, useState} from "react";
-import {useApi} from "@shopify/ui-extensions-react/admin";
+/** @jsxImportSource preact */
+import {useEffect, useState} from "preact/hooks";
 
 export const DYNAMIC_SHIPPING_DELAY_EMAIL_TYPE = "dynamic_shipping_delay";
 export const AWAITING_STOCK_EMAIL_TYPE = "awaiting_stock";
@@ -23,8 +23,8 @@ const DEFAULT_FROM_OPTIONS = [
   },
 ];
 
-export function useComposerState(target) {
-  const api = useApi(target);
+export function useComposerState() {
+  const api = shopify;
   const {data} = api;
   const launchUrl = getLaunchUrl(api.intents?.launchUrl);
   const launchMode = getLaunchParam(launchUrl, "mode");
@@ -112,6 +112,7 @@ export function useComposerState(target) {
       setError("");
 
       try {
+        /** @type {{data?: Record<string, any>, errors?: {message: string}[]}} */
         const result = await api.query(
           `query OrderEmailPanel($id: ID!) {
             shop {

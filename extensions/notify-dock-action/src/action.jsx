@@ -1,3 +1,6 @@
+/** @jsxImportSource preact */
+import "@shopify/ui-extensions/preact";
+import {render} from "preact";
 import {
   AdminAction,
   Badge,
@@ -14,9 +17,8 @@ import {
   Select,
   Text,
   TextField,
-  reactExtension,
-} from "@shopify/ui-extensions-react/admin";
-import {useEffect, useState} from "react";
+} from "../../shared/polaris";
+import {useEffect, useState} from "preact/hooks";
 import {
   AWAITING_STOCK_EMAIL_TYPE,
   BUSINESS_DAYS_RANGE_DELAY_STATE,
@@ -27,9 +29,10 @@ import {
   useComposerState,
 } from "./composer.jsx";
 
-const TARGET = "admin.order-details.action.render";
 
-export default reactExtension(TARGET, () => <ActionComposer />);
+export default function extension() {
+  render(<ActionComposer />, document.body);
+}
 
 function ActionComposer() {
   const {
@@ -70,7 +73,7 @@ function ActionComposer() {
     sku,
     status,
     subject,
-  } = useComposerState(TARGET);
+  } = useComposerState();
 
   const selectedHistoryEntry =
     history.find((entry) => entry.id === selectedHistoryId) || null;
@@ -273,7 +276,7 @@ function ActionComposer() {
         ) : null}
 
         {loadingOrder ? (
-          <ProgressIndicator size="small" accessibilityLabel="Loading order details" />
+          <ProgressIndicator size="base" accessibilityLabel="Loading order details" />
         ) : null}
 
         {error ? <Banner tone="critical">{error}</Banner> : null}
@@ -367,7 +370,7 @@ function ActionComposer() {
         ) : null}
 
         {showsSku(emailType) && loadingProduct ? (
-          <ProgressIndicator size="small" accessibilityLabel="Loading product preview" />
+          <ProgressIndicator size="base" accessibilityLabel="Loading product preview" />
         ) : null}
 
         {showsSku(emailType) && lookupError ? <Banner tone="warning">{lookupError}</Banner> : null}
@@ -560,6 +563,7 @@ function HistoryRecipientEditor({
   );
 }
 
+/** @param {{alignment?: "start" | "center" | "end"}} props */
 function HistoryTimelineConnector({alignment = "center"}) {
   return (
     <Box inlineSize={20} minInlineSize={20}>
@@ -904,7 +908,7 @@ function DynamicDelaySummary({
         accessibilityLabel={buildDynamicDelayShipDateSummaryLabel(detail)}
         onPress={disabled ? undefined : onShipDateEdit}
       >
-        <Badge size="small-100">
+        <Badge size="base">
           {buildDynamicDelayShipDateSummaryLabel(detail)}
         </Badge>
       </Pressable>
@@ -913,7 +917,7 @@ function DynamicDelaySummary({
         accessibilityLabel={buildDynamicDelayBuiltToOrderSummaryLabel(detail)}
         onPress={disabled ? undefined : onBuiltToOrderEdit}
       >
-        <Badge size="small-100">
+        <Badge size="base">
           {buildDynamicDelayBuiltToOrderSummaryLabel(detail)}
         </Badge>
       </Pressable>
