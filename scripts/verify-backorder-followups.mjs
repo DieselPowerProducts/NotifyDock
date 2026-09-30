@@ -49,6 +49,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
   process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
   process.env.NOTIFY_DOCK_AUTOMATION_SHOPS = shop;
   process.env.NOTIFY_DOCK_AUTOMATION_START_AT = "2026-09-24T19:00:00Z";
+  process.env.NOTIFY_DOCK_AUTOMATION_INITIAL_START_AT = "2026-09-24T19:00:00Z";
   const history = {id: "history-1", shop, orderId: order.id, orderNumber: order.name,
     source: "backorder_automation", requestEventUniqueId: "initial-accepted", emailType: "dynamic_shipping_delay", customerEmail: "work@example.com"};
   const rows = [];
@@ -57,7 +58,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
   const histories = [];
   const lease = {};
   let failComplete = false;
-  let policy = {startAt: new Date("2026-09-24T19:00:00Z")};
+  let policy = {startAt: new Date("2026-09-24T19:00:00Z"), initialStartAt: new Date("2026-09-24T19:00:00Z")};
   let failPolicyRead = false;
   const matches = (row, where) => Object.entries(where).every(([key, value]) =>
     value && typeof value === "object" && !(value instanceof Date)
@@ -108,8 +109,8 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     const api = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
     await api.runBackorderFollowups(now);
     assert.equal(sends.length, 0, "No enrollment means no automatic email, even with eligible orders");
-    await api.saveFollowupTracking(history, [{lineItemId: "A", variantId: "v-A", sku: "A", kind: "backorder"},
-      {lineItemId: "B", variantId: "v-B", sku: "B", kind: "built_to_order"}], new Date("2026-09-23T20:00:00Z"));
+    await api.saveFollowupTracking(history, {order, candidates: [{lineItemId: "A", variantId: "v-A", sku: "A", kind: "backorder"},
+      {lineItemId: "B", variantId: "v-B", sku: "B", kind: "built_to_order"}]}, new Date("2026-09-23T20:00:00Z"));
     assert.equal(rows.length, 2);
     failComplete = true;
     await api.runBackorderFollowups(now);
@@ -146,7 +147,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
         assert.equal(sends.length, 2);
         assert.ok(rows.every((r) => r.status === "pending"));
         assert.deepEqual(await api.prepareFollowupTracking({admin: {}, shop, orderId: order.id,
-          products: [{sku: "A", delayState: "no_confirmed_date"}], emailType: "dynamic_shipping_delay"}), []);
+          products: [{sku: "A", delayState: "no_confirmed_date"}], emailType: "dynamic_shipping_delay"}), {order: null, candidates: []});
       }
     }
     process.env.NOTIFY_DOCK_AUTOMATION_MODE = "off";
@@ -158,7 +159,7 @@ test("worker only sends tracked items to the initial recipient and deduplicates 
     assert.equal(sends.length, 2);
   } finally {
     delete globalThis.followupTest;
-    for (const key of ["NOTIFY_DOCK_FOLLOWUP_ENABLED", "NOTIFY_DOCK_FOLLOWUP_SHOPS", "NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_SHOPS", "NOTIFY_DOCK_AUTOMATION_START_AT"]) {
+    for (const key of ["NOTIFY_DOCK_FOLLOWUP_ENABLED", "NOTIFY_DOCK_FOLLOWUP_SHOPS", "NOTIFY_DOCK_AUTOMATION_MODE", "NOTIFY_DOCK_AUTOMATION_SHOPS", "NOTIFY_DOCK_AUTOMATION_START_AT", "NOTIFY_DOCK_AUTOMATION_INITIAL_START_AT"]) {
       if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
     }
   }

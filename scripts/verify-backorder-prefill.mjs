@@ -38,13 +38,29 @@ test("absent and blank dates/messages keep both products with generic messaging"
   }
 });
 
-test("invalid or past dates and unsupported message types still require correction", () => {
-  for (const field of [{value: "not a date"}, {type: "date", value: "2026-02-30"}, {type: "date", value: "2000-01-01"}]) {
+test("invalid dates and unsupported message types still require correction", () => {
+  for (const field of [{value: "not a date"}, {type: "date", value: "2026-02-30"}]) {
     assert.equal(select([{...order.lineItems[0], variant: {...order.lineItems[0].variant, availabilityDate: field}}]).status, "waiting");
   }
   assert.equal(select([{...order.lineItems[1], variant: {...order.lineItems[1].variant,
     buildToOrderMessage: {type: "rich_text_field", value: '{"type":"root"}'},
   }}]).status, "waiting");
+});
+
+test("today and past Backorder dates prefill and render the existing generic message", async () => {
+  const bundle = await build({entryPoints: ["app/notify-dock-email-template.server.js"], bundle: true,
+    platform: "node", format: "esm", write: false});
+  const {buildNotifyDockMessage} = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+  for (const value of ["2026-09-24", "2026-09-23", "2000-01-01"]) {
+    const result = select([{...order.lineItems[0], variant: {...order.lineItems[0].variant,
+      availabilityDate: {type: "date", value},
+    }}]);
+    assert.equal(result.status, "ready", "An elapsed ETA must not block the initial notice");
+    assert.equal(result.payload.products[0].delayState, "no_confirmed_date");
+    assert.equal(result.payload.products[0].delayDate, "");
+    assert.ok(buildNotifyDockMessage(result.payload).includes(genericMessage));
+    assert.doesNotMatch(buildNotifyDockMessage(result.payload), /current ship date of your part|Insert Ship date/);
+  }
 });
 
 test("mixed known and missing information renders exact fallback per item without placeholders", async () => {

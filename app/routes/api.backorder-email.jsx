@@ -119,7 +119,7 @@ export async function action({request}) {
   }
 
   try {
-    const followupCandidates = await prepareFollowupTracking({admin, shop: session.shop, orderId,
+    const followupTracking = await prepareFollowupTracking({admin, shop: session.shop, orderId,
       products: resolvedProducts, emailType, globalShipDate});
     const sentAt = new Date();
     const sentByEmail = getCurrentUserEmail(session);
@@ -171,7 +171,7 @@ export async function action({request}) {
         sku: resolvedSkuValue,
         subject,
       });
-      await saveFollowupTracking(savedHistory, followupCandidates);
+      await saveFollowupTracking(savedHistory, followupTracking);
     } catch (historyError) {
       historyWarning =
         historyError instanceof Error

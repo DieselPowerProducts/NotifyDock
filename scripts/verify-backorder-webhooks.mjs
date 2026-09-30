@@ -15,6 +15,8 @@ test("order webhooks process only their eligible new order, lock concurrent work
   const orders = new Map();
   let failSend = false;
   let beforeLoad = () => {};
+  let afterLoad = () => {};
+  let onJobUpdate = () => {};
   const orderFor = (id) => ({id: `gid://shopify/Order/${id}`, name: `#${id}`, createdAt: "2026-09-24T21:53:00Z",
     tags: ["Backorder"], email: "audit@example.com", lineItems: [{id: `L${id}`, sku: `RH-${id}`, title: "Red Head",
       currentQuantity: 1, unfulfilledQuantity: 1, variant: {id: `V${id}`, product: {vendor: "Red-Head Steering Gears Inc."},
@@ -32,7 +34,7 @@ test("order webhooks process only their eligible new order, lock concurrent work
       createMany: async ({data}) => {for (const row of data) if (!rows.some((r) => r.id === row.id)) rows.push({...row, status: "queued"});},
       updateMany: async ({where, data}) => {const selected = rows.filter((r) => matches(r, where)); selected.forEach((r) => Object.assign(r, data)); return {count: selected.length};},
       findUnique: async ({where}) => structuredClone(rows.find((r) => matches(r, where))),
-      update: async ({where, data}) => Object.assign(rows.find((r) => matches(r, where)), data),
+      update: async ({where, data}) => {const row = Object.assign(rows.find((r) => matches(r, where)), data); onJobUpdate(row, data); return row;},
     },
     notifyDockEmailHistory: {findFirst: async ({where}) => histories.find((r) => matches(r, where)),
       upsert: async ({create}) => {if (!histories.some((r) => r.sourceEventId === create.sourceEventId)) histories.push(create); return {...create, id: "history"};}},
@@ -40,7 +42,8 @@ test("order webhooks process only their eligible new order, lock concurrent work
   };
   globalThis.webhookTest = {db,
     load: async (_admin, id) => {loads.push(id); beforeLoad(id); await new Promise((r) => setTimeout(r, 5));
-      return {order: orders.get(id), today: "2026-09-24", timeZone: "America/Los_Angeles"};},
+      const order = structuredClone(orders.get(id)); afterLoad(id);
+      return {order, today: "2026-09-24", timeZone: "America/Los_Angeles"};},
     send: async (payload) => {sends.push(structuredClone(payload)); if (failSend) throw new Error("Provider unavailable"); return {metricName: "audit"};},
   };
   try {
@@ -133,20 +136,18 @@ test("order webhooks process only their eligible new order, lock concurrent work
     }
     assert.deepEqual({rows: rows.length, loads: loads.length, sends: sends.length}, unchanged);
 
-    // Even a selection that already passed cannot bypass the final fresh lookup.
+    // The single Shopify snapshot, not a stale webhook timestamp, controls cutoff.
     const changedBeforeSend = orderFor(30); orders.set(changedBeforeSend.id, changedBeforeSend);
     let reads = 0;
     beforeLoad = (id) => {
-      if (id === changedBeforeSend.id && ++reads === 2) changedBeforeSend.createdAt = "2025-01-01T00:00:00Z";
+      if (id === changedBeforeSend.id && ++reads === 1) changedBeforeSend.createdAt = "2025-01-01T00:00:00Z";
     };
-    assert.equal(await processEvent(eventFor(changedBeforeSend)), "retry");
-    assert.equal(reads, 2); assert.equal(sends.length, 6);
-    assert.ok(rows.find((r) => r.orderId === changedBeforeSend.id).sendPayload,
-      "A saved payload still cannot bypass the final cutoff check");
+    assert.equal(await processEvent(eventFor(changedBeforeSend)), "skipped");
+    assert.equal(reads, 1); assert.equal(sends.length, 6);
 
     // The all-vendor cutoff applies before enqueueing, even to an older waiting job.
     beforeLoad = () => {};
-    initialCutoff = new Date("2026-09-30T22:30:00Z");
+    initialCutoff = new Date("2026-09-30T23:20:00Z");
     process.env.NOTIFY_DOCK_AUTOMATION_INITIAL_START_AT = initialCutoff.toISOString();
     const oldOtherVendor = orderFor(40);
     oldOtherVendor.lineItems[0].variant.product.vendor = "Industrial Injection";
@@ -155,12 +156,114 @@ test("order webhooks process only their eligible new order, lock concurrent work
     assert.equal(await processEvent(eventFor(changedBeforeSend)), "ignored");
     assert.equal(sends.length, 6);
     const newOtherVendor = orderFor(41);
-    newOtherVendor.createdAt = "2026-09-30T15:30:00-07:00";
+    newOtherVendor.createdAt = "2026-09-30T16:20:00-07:00";
     newOtherVendor.lineItems[0].variant.product.vendor = "BD Diesel";
     orders.set(newOtherVendor.id, newOtherVendor);
     assert.equal(await processEvent(eventFor(newOtherVendor)), "accepted");
     assert.equal(await processEvent(eventFor(newOtherVendor)), "complete");
     assert.equal(sends.length, 7);
+
+    // Initial eligibility comes from the one Shopify snapshot for this attempt.
+    for (const [index, [mutate, expected]] of [
+      [(order) => {order.tags = [];}, "skipped"],
+      [(order) => {order.lineItems[0].unfulfilledQuantity = 0;}, "skipped"],
+      [(order) => {order.lineItems[0].variant.availability.value = "In Stock";}, "waiting"],
+      [(order) => {order.email = "";}, "waiting"],
+    ].entries()) {
+      const changed = orderFor(50 + index); changed.createdAt = initialCutoff.toISOString();
+      orders.set(changed.id, changed);
+      let reads = 0;
+      beforeLoad = (id) => {if (id === changed.id && ++reads === 1) mutate(changed);};
+      assert.equal(await processEvent(eventFor(changed)), expected);
+      assert.equal(reads, 1);
+      assert.equal(sends.length, 7, "Ineligible snapshots never reach the provider");
+    }
+
+    // A manual notice recorded between failed automatic attempts prevents retry.
+    beforeLoad = () => {};
+    const manualBetweenAttempts = orderFor(70); manualBetweenAttempts.createdAt = initialCutoff.toISOString();
+    orders.set(manualBetweenAttempts.id, manualBetweenAttempts);
+    failSend = true;
+    assert.equal(await processEvent(eventFor(manualBetweenAttempts)), "retry");
+    assert.equal(sends.length, 8);
+    failSend = false;
+    histories.push({shop, orderId: manualBetweenAttempts.id, emailType: "dynamic_shipping_delay", source: "app"});
+    assert.equal(await processEvent(eventFor(manualBetweenAttempts)), "previously_notified");
+    assert.equal(sends.length, 8);
+
+    // A manual send recorded while preparing the payload still prevents submission.
+    const lateManual = orderFor(71); lateManual.createdAt = initialCutoff.toISOString();
+    orders.set(lateManual.id, lateManual);
+    onJobUpdate = (row, data) => {if (row.orderId === lateManual.id && data.sendPayload) {
+      histories.push({shop, orderId: lateManual.id, emailType: "dynamic_shipping_delay", source: "app"});
+    }};
+    assert.equal(await processEvent(eventFor(lateManual)), "retry");
+    assert.equal(sends.length, 8);
+    assert.equal(await processEvent(eventFor(lateManual)), "previously_notified");
+
+    onJobUpdate = () => {};
+    beforeLoad = () => {};
+    const beforeLateTag = sends.length;
+    // New orders can receive the tag days later, not just at order creation.
+    const laterBackorder = orderFor(90);
+    laterBackorder.createdAt = "2026-09-30T23:20:00Z";
+    laterBackorder.tags = ["VIP"];
+    orders.set(laterBackorder.id, laterBackorder);
+    const firstUntagged = eventFor(laterBackorder); firstUntagged.payload.tags = "VIP";
+    assert.equal(await processEvent(firstUntagged), "ignored");
+    assert.ok(!rows.some((row) => row.orderId === laterBackorder.id));
+    laterBackorder.tags.push("Backorder");
+    const laterTagEvent = eventFor(laterBackorder);
+    laterTagEvent.payload.updated_at = "2026-10-02T18:00:00Z";
+    assert.equal(await processEvent(laterTagEvent), "accepted");
+    assert.equal(sends.length, beforeLateTag + 1);
+    assert.equal(await processEvent(firstUntagged), "ignored", "Delayed untagged events do not reopen accepted work");
+    assert.equal(await processEvent(laterTagEvent), "complete");
+    assert.equal(sends.length, beforeLateTag + 1, "Later tagging never bypasses duplicate protection");
+
+    // A draft object is not an Order. Once converted, use the actual Order's
+    // ID/createdAt and process a subsequently added tag exactly like checkout.
+    const draftEvent = {shop, payload: {admin_graphql_api_id: "gid://shopify/DraftOrder/91",
+      name: "#D91", created_at: "2026-09-30T22:00:00Z", tags: "Backorder"}};
+    assert.equal(await processEvent(draftEvent), "ignored");
+    const converted = orderFor(91);
+    converted.createdAt = "2026-09-30T16:25:00-07:00";
+    converted.sourceName = "shopify_draft_order";
+    converted.tags = [];
+    orders.set(converted.id, converted);
+    const convertedEvent = eventFor(converted);
+    convertedEvent.payload.source_name = "shopify_draft_order"; convertedEvent.payload.tags = "";
+    assert.equal(await processEvent(convertedEvent), "ignored");
+    converted.tags = ["Backorder"]; convertedEvent.payload.tags = "Backorder";
+    convertedEvent.payload.updated_at = "2026-09-30T23:30:00Z";
+    assert.equal(await processEvent(convertedEvent), "accepted");
+    assert.equal(sends.length, beforeLateTag + 2);
+    assert.equal(await processEvent(convertedEvent), "complete");
+
+    // A date added after the snapshot cannot suppress the generic initial notice
+    // or silently remove the follow-up enrollment for that generic item.
+    const snapshotOrder = orderFor(95); snapshotOrder.createdAt = initialCutoff.toISOString();
+    snapshotOrder.lineItems[0].variant.availabilityDate = null;
+    orders.set(snapshotOrder.id, snapshotOrder);
+    afterLoad = (id) => {if (id === snapshotOrder.id) {
+      snapshotOrder.lineItems[0].variant.availabilityDate = {type: "date", value: "2026-10-25"};
+    }};
+    const beforeSnapshotSend = sends.length;
+    assert.equal(await processEvent(eventFor(snapshotOrder)), "accepted");
+    assert.equal(loads.filter((id) => id === snapshotOrder.id).length, 1);
+    assert.equal(sends.length, beforeSnapshotSend + 1);
+    assert.equal(sends.at(-1).products[0].delayDate || "", "");
+    assert.equal(sends.at(-1).followupCandidates.length, 1);
+    assert.equal(await processEvent(eventFor(snapshotOrder)), "complete");
+    afterLoad = () => {};
+
+    // A date already present at the read is included immediately, without tracking.
+    const datedOrder = orderFor(96); datedOrder.createdAt = initialCutoff.toISOString();
+    orders.set(datedOrder.id, datedOrder);
+    assert.equal(await processEvent(eventFor(datedOrder)), "accepted");
+    assert.equal(loads.filter((id) => id === datedOrder.id).length, 1);
+    assert.equal(sends.at(-1).products[0].delayDate, "2026-10-15");
+    assert.equal(sends.at(-1).followupCandidates.length, 0);
 
   } finally {
     delete globalThis.webhookTest;

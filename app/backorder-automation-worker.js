@@ -1,4 +1,4 @@
-import {selectBackorderNotice} from "./backorder-automation.js";
+import {selectBackorderNotice, initialPayloadMatchesSelection} from "./backorder-automation.js";
 import {genericFollowupCandidates} from "./backorder-followup.js";
 
 // Dependencies are injected so failure/retry behavior can be tested without sending email.
@@ -6,16 +6,19 @@ export async function processBackorderJob({job, config, repository, loadOrder, s
   const update = (data) => repository.update(job.id, data);
   const retryAt = new Date(now.getTime() + 15 * 60 * 1000);
   try {
-    const {order, shopName, today, timeZone} = await loadOrder(job.orderId);
+    const loaded = await loadOrder(job.orderId);
+    const {order, shopName, today, timeZone} = loaded;
     const selection = selectBackorderNotice({order, config, today, timeZone});
     if (selection.status !== "ready") {
       await update({status: selection.status, reason: selection.reason, nextAttemptAt: retryAt});
       return selection.status;
     }
-    if (job.sendPayload && (
-      job.sendPayload.customerEmail !== selection.payload.customerEmail ||
-      productSignature(job.sendPayload.products) !== productSignature(selection.payload.products)
-    )) {
+    // Staff may have sent a notice since an earlier automatic attempt failed.
+    if (await repository.hasPreviousNotice(job)) {
+      await update({status: "previously_notified", reason: "A backorder or shipping-delay email is already recorded for this order."});
+      return "previously_notified";
+    }
+    if (job.sendPayload && !initialPayloadMatchesSelection(job.sendPayload, selection)) {
       await update({
         status: "waiting",
         reason: "Recipient, eligible items, dates, or messages changed after a send attempt. Review Klaviyo activity before sending manually; the earlier request may already have been accepted.",
@@ -25,10 +28,6 @@ export async function processBackorderJob({job, config, repository, loadOrder, s
     }
     // Once a send has been attempted, preserve its recipient, metric, payload and ID.
     // Klaviyo deduplicates retries using (profile, metric, unique_id).
-    if (!job.sendPayload && await repository.hasPreviousNotice(job)) {
-      await update({status: "previously_notified", reason: "A backorder or shipping-delay email is already recorded for this order."});
-      return "previously_notified";
-    }
     const payload = job.sendPayload || {
       ...selection.payload,
       followupCandidates: genericFollowupCandidates({order, ...selection.payload}),
@@ -45,8 +44,8 @@ export async function processBackorderJob({job, config, repository, loadOrder, s
     // This durable write MUST succeed before contacting Klaviyo.
     const attemptedAt = job.attemptedAt || now;
     await update({sendPayload: payload, previewPayload: payload, attemptedAt, attempts: {increment: 1}});
-    const result = await send(payload);
-    await repository.complete(job, payload, result, attemptedAt);
+    const result = await send(payload, loaded);
+    await repository.complete(job, payload, result, attemptedAt, order);
     return "accepted";
   } catch (error) {
     await update({
@@ -56,11 +55,4 @@ export async function processBackorderJob({job, config, repository, loadOrder, s
     });
     return "retry";
   }
-}
-
-function productSignature(products) {
-  return JSON.stringify(products.map(({sku, delayDate, delayState, delayMessage}) =>
-    [sku, delayDate, delayState || "specific_date", delayMessage || ""]).sort((a, b) =>
-    JSON.stringify(a).localeCompare(JSON.stringify(b)),
-  ));
 }

@@ -1,5 +1,5 @@
 import prisma from "./db.server";
-import {getBackorderAutomationConfig} from "./backorder-automation.js";
+import {getBackorderAutomationConfig, minimumInitialBackorderCutoff} from "./backorder-automation.js";
 
 // Policies are provisioned by migration, never created from runtime settings.
 // A missing record, missing setting, mismatch or database failure blocks automation.
@@ -23,9 +23,11 @@ export async function requireInitialBackorderPolicy(shop, db = prisma, env = pro
   const initial = getBackorderAutomationConfig({...env,
     NOTIFY_DOCK_AUTOMATION_START_AT: env.NOTIFY_DOCK_AUTOMATION_INITIAL_START_AT || "",
   });
+  const minimum = minimumInitialBackorderCutoff(shop);
   if (!Number.isFinite(initial.startAt.getTime()) || !Number.isFinite(config.initialStartAt?.getTime()) ||
-    initial.startAt.getTime() !== config.initialStartAt.getTime() || initial.startAt < config.startAt) {
-    throw new Error("Initial-email cutoff is missing, changed, or earlier than the locked original policy. Processing stopped.");
+    initial.startAt.getTime() !== config.initialStartAt.getTime() || initial.startAt < config.startAt ||
+    (minimum && initial.startAt < minimum)) {
+    throw new Error("Initial-email cutoff is missing, changed, or earlier than the approved rollout cutoff. Processing stopped.");
   }
   return {...config, startAt: config.initialStartAt};
 }

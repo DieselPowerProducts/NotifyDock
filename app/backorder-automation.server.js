@@ -53,7 +53,7 @@ const repository = {
     where: {shop: job.shop, orderId: job.orderId, emailType: {in: BACKORDER_HISTORY_TYPES}},
     select: {id: true},
   })),
-  complete: async (job, payload, result, sentAt) => {
+  complete: async (job, payload, result, sentAt, order) => {
     await prisma.$transaction(async (tx) => {
       const history = await tx.notifyDockEmailHistory.upsert({
         where: {sourceEventId: job.id},
@@ -67,7 +67,7 @@ const repository = {
           source: "backorder_automation", sourceEventId: job.id, sentAt,
         },
       });
-      await saveFollowupTracking(history, payload.followupCandidates || [], new Date(), tx);
+      await saveFollowupTracking(history, {order, candidates: payload.followupCandidates || []}, new Date(), tx);
       await tx.notifyDockBackorderJob.update({
         where: {id: job.id},
         data: {status: "accepted", acceptedAt: new Date(), reason: "Klaviyo accepted the event. Delivery is tracked in email history."},
@@ -76,8 +76,9 @@ const repository = {
   },
 };
 
-// Only the order identified by an authenticated Shopify webhook is processed.
-// There is no scheduled discovery scan or queue-wide drain.
+// Both order-created and order-updated webhooks enter here. The Backorder tag
+// may be added long after checkout/draft completion; no tag-at-creation test is
+// required. Only this event's order is processed, with no historical scan.
 export async function processBackorderWebhook({shop, payload}) {
   const id = await enqueueBackorderWebhook({shop, payload});
   if (!id) return "ignored";
@@ -100,7 +101,10 @@ export async function processBackorderWebhook({shop, payload}) {
     return await processBackorderJob({
       job, config, repository,
       loadOrder: (orderId) => loadBackorderOrder(admin, orderId),
-      send: (email) => sendAutomaticBackorderEvent({shop, orderId: job.orderId, payload: email, kind: "initial"}),
+      send: (email, loaded) => sendAutomaticBackorderEvent({shop, orderId: job.orderId, payload: email, kind: "initial", loaded,
+        beforeSend: async () => {
+          if (await repository.hasPreviousNotice(job)) throw new Error("A backorder notice was recorded before the automatic send.");
+        }}),
       buildMessage: buildNotifyDockMessage,
     });
   } finally {

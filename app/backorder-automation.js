@@ -4,6 +4,12 @@ export const BACKORDER_HISTORY_TYPES = [
   "backorder_notice", "shipping_delay", BACKORDER_EMAIL_TYPE,
 ];
 
+// Independent release floor: matching but stale DB/environment settings must
+// never reopen the production interval before the approved 4:20 p.m. cutoff.
+export function minimumInitialBackorderCutoff(shop) {
+  return shop === "fbgure-nn.myshopify.com" ? new Date("2026-09-30T23:20:00Z") : null;
+}
+
 export function getBackorderAutomationConfig(env = process.env) {
   const mode = env.NOTIFY_DOCK_AUTOMATION_MODE || "off";
   if (!["off", "dry-run", "live"].includes(mode)) {
@@ -102,7 +108,7 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
     if (!["backorder", "build to order", "built to order"].includes(availability)) continue;
     const builtToOrder = availability !== "backorder";
     const sku = `${item.sku || variant.sku || ""}`.trim();
-    const date = builtToOrder ? "" : normalizeAvailabilityDate(variant.availabilityDate, timeZone);
+    let date = builtToOrder ? "" : normalizeAvailabilityDate(variant.availabilityDate, timeZone);
     const messageField = variant.buildToOrderMessage;
     const message = builtToOrder ? `${messageField?.value || ""}`.trim() : "";
     const hasDateValue = Boolean(`${variant.availabilityDate?.value || ""}`.trim());
@@ -113,10 +119,16 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
       }
     } else if (hasDateValue && !isValidAvailabilityDate(date)) {
       problems.push(`${sku || item.title}: custom.product_availability_date is invalid (expected a date/time convertible to the store's calendar date).`);
-    } else if (date && date < today) {
-      problems.push(`${sku || item.title}: confirmed availability date is in the past.`);
+    } else if (date && date <= today) {
+      // An elapsed ETA is not a current promise. Use the same generic notice as
+      // a missing date and enroll the item for a future estimate. `today` is the
+      // store's calendar date at this attempt, not the order's creation date.
+      date = "";
     }
     products.push({
+      variantId: variant.id,
+      lineItemIds: [item.id],
+      availabilityKind: builtToOrder ? "built_to_order" : "backorder",
       sku,
       productTitle: item.title,
       productVariantTitle: item.variantTitle || "",
@@ -138,10 +150,14 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
   if (!order.name) return wait("Order number is missing.");
 
   // The same variant can appear on multiple lines (for example, with different properties).
-  const uniqueProducts = products.filter((product, index) =>
-    products.findIndex((other) => other.sku === product.sku && other.delayState === product.delayState &&
-      other.delayDate === product.delayDate && other.delayMessage === product.delayMessage) === index,
-  );
+  const uniqueProducts = [];
+  for (const product of products) {
+    const existing = uniqueProducts.find((other) => other.variantId === product.variantId &&
+      other.sku === product.sku && other.delayState === product.delayState &&
+      other.delayDate === product.delayDate && other.delayMessage === product.delayMessage);
+    if (existing) existing.lineItemIds.push(...product.lineItemIds);
+    else uniqueProducts.push(product);
+  }
   return {
     status: "ready",
     reason: "Selected items use their availability date, Built to Order message, or the generic unconfirmed-date notice.",
@@ -163,4 +179,15 @@ export function selectBackorderNotice({order, config, today, timeZone, requireCu
       productVariantTitle: uniqueProducts[0].productVariantTitle,
     },
   };
+}
+
+// Compare identities as well as rendered estimates. A reused SKU must not make a
+// different line/variant look like the product selected for a saved send.
+export function initialPayloadMatchesSelection(payload, selection) {
+  if (selection.status !== "ready" || payload.customerEmail !== selection.payload.customerEmail) return false;
+  const signature = (products = []) => JSON.stringify(products.map((product) => [
+    product.variantId || "", [...(product.lineItemIds || [])].sort(), product.availabilityKind || "", product.sku,
+    product.delayState || "specific_date", product.delayDate || "", product.delayMessage || "",
+  ]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+  return signature(payload.products) === signature(selection.payload.products);
 }

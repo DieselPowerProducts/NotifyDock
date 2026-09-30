@@ -93,6 +93,7 @@ model NotifyDockFollowupBatch {
   status String @default("pending")
   nextAttemptAt DateTime
   reason String?
+  attemptedAt DateTime? @default(now())
   acceptedAt DateTime?
   createdAt DateTime @default(now())
   @@index([shop, status, nextAttemptAt])
